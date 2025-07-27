@@ -32,25 +32,19 @@ except (ValueError, TypeError) as e:
     model = None
 
 prompt_template = """
-ROLE: You are a creative assistant specialized in analyzing movie plots to extract thematic keywords.
-INSTRUCTION: Based on the movie title and plot overview, generate a comma-separated list of 5-7 concise, thematic keywords that capture the essence of the movie's story, themes, and mood. The keywords should be thematic and evocative, not just simple genre labels.
-STEPS:
-1. Read the movie title and plot overview.
-2. Identify the core themes, narrative elements, and underlying mood.
-3. Brainstorm a list of potential keywords.
-4. Select the 5-7 most impactful and thematic keywords.
-5. Format the keywords as a single, comma-separated string.
-END GOAL: A concise, comma-separated string of thematic keywords suitable for a recommendation system.
+As an expert film analyst, generate 5-10 thematic keywords for the movie provided. The keywords must capture the film's underlying themes, mood, and core concepts, not just surface-level plot points or genres. The output must be a single, comma-separated string.
 
+---
 EXAMPLE 1:
 Title: The Matrix
 Overview: A computer hacker learns from mysterious rebels about the true nature of his reality and his role in the war against its controllers.
-Keywords: simulated reality, chosen one, cyberpunk, reality vs. illusion, dystopian future, philosophical sci-fi, machine uprising
-
+Keywords: reality, simulation, control, rebellion, choice, technology, dystopia, cyberpunk, free will
+---
 EXAMPLE 2:
-Title: Forrest Gump
-Overview: The presidencies of Kennedy and Johnson, the Vietnam War, the Watergate scandal and other historical events unfold from the perspective of an Alabama man with an IQ of 75, whose only desire is to be reunited with his childhood sweetheart.
-Keywords: unlikely hero, historical epic, american dream, enduring love, innocence lost, cultural tapestry, fateful journey
+Title: The Dreamers
+Overview: A young American studying in Paris in 1968 strikes up a friendship with a French brother and sister. Set against the backdrop of the '68 Paris student riots, their relationship becomes an intense, claustrophobic ménage à trois. They hole up in an apartment, challenging each other's perspectives on life, politics, and sexuality while indulging in a cinematic obsession.
+Keywords: Sexual Awakening, Youthful Rebellion, Cinephilia, Political Idealism, Coming-of-age, Intimate Drama, Confined Relationships
+---
 
 MOVIE TO ANALYZE:
 Title: {title}
@@ -66,8 +60,10 @@ def generate_llm_keywords(title, overview):
         return "429" in error_str or "503" in error_str
     custom_retry = retry.Retry(predicate=is_retryable, initial=10.0, maximum=300.0, multiplier=2.0)
     try:
+        generation_config = genai.GenerationConfig(temperature=1.0, top_p=0.95)
         response = model.generate_content(
             prompt_template.format(title=title, overview=overview),
+            generation_config=generation_config,
             request_options={'retry': custom_retry}
         )
         return response.text.strip()
