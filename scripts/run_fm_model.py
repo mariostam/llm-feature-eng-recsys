@@ -10,10 +10,25 @@ from scipy.sparse import hstack
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
 import warnings
+import random
+import os
 
 warnings.filterwarnings('ignore')
 
+def set_seed(seed: int = 42):
+    """Set the seed for reproducibility in python, numpy and torch."""
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
 def main():
+    set_seed(42)
     print('--- 1. Loading and Preprocessing Data ---')
     DATA_PATH = 'data/final_llm_features_dataset.parquet'
 
@@ -62,7 +77,16 @@ def main():
         y_test_tensor = torch.from_numpy(y_test).float().view(-1, 1)
         train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
         test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        
+        def seed_worker(worker_id):
+            worker_seed = torch.initial_seed() % 2**32
+            np.random.seed(worker_seed)
+            random.seed(worker_seed)
+
+        g = torch.Generator()
+        g.manual_seed(42)
+
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, worker_init_fn=seed_worker, generator=g)
         test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
         return train_loader, test_loader, test_dataset
 
@@ -121,37 +145,46 @@ def main():
             bootstrapped_rmses.append(rmse)
         return np.array(bootstrapped_rmses)
 
-    def run_experiment(train_loader, test_loader, test_dataset, num_features, num_epochs=10, learning_rate=0.01, embedding_dim=50):
+    def run_experiment(train_loader, test_loader, test_dataset, num_features, num_epochs, learning_rate=0.01, embedding_dim=50):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print(f"Using device: {device}")
         model = FactorizationMachine(num_features=num_features, embedding_dim=embedding_dim).to(device)
         criterion = nn.MSELoss()
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
         for epoch in tqdm(range(num_epochs), desc="Training Epochs"):
-            train_loss = train_model(model, train_loader, optimizer, criterion, device)
+            train_model(model, train_loader, optimizer, criterion, device)
+            train_rmse = evaluate_model(model, train_loader, criterion, device)
             test_rmse = evaluate_model(model, test_loader, criterion, device)
-            print(f"Epoch {epoch+1}/{num_epochs} | Train Loss: {train_loss:.4f} | Test RMSE: {test_rmse:.4f}")
+            print(f"Epoch {epoch+1}/{num_epochs} | Train RMSE: {train_rmse:.4f} | Test RMSE: {test_rmse:.4f}")
         
         # Perform bootstrapping for confidence interval
         bootstrapped_rmses = bootstrap_rmse(model, test_dataset, criterion, device)
         lower_bound = np.percentile(bootstrapped_rmses, 2.5)
         upper_bound = np.percentile(bootstrapped_rmses, 97.5)
         
-        return evaluate_model(model, test_loader, criterion, device), (lower_bound, upper_bound)
+        final_train_rmse = evaluate_model(model, train_loader, criterion, device)
+        final_test_rmse = evaluate_model(model, test_loader, criterion, device)
+
+        return final_train_rmse, final_test_rmse, (lower_bound, upper_bound)
 
     print('\n--- 3. Starting Control Group Experiment (Human Keywords) ---')
     num_features_human = X_human.shape[1]
-    rmse_human, ci_human = run_experiment(train_loader_human, test_loader_human, test_dataset_human, num_features_human)
-    print(f"\\nFinal RMSE for Control (Human) Model: {rmse_human:.4f}")
+    train_rmse_human, test_rmse_human, ci_human = run_experiment(train_loader_human, test_loader_human, test_dataset_human, num_features_human, num_epochs=9)
+    print(f"\nFinal Train RMSE for Control (Human) Model: {train_rmse_human:.4f}")
+    print(f"Final Test RMSE for Control (Human) Model: {test_rmse_human:.4f}")
+
 
     print('\n--- 4. Starting Experimental Group Experiment (LLM Keywords) ---')
     num_features_llm = X_llm.shape[1]
-    rmse_llm, ci_llm = run_experiment(train_loader_llm, test_loader_llm, test_dataset_llm, num_features_llm)
-    print(f"\\nFinal RMSE for Experimental (LLM) Model: {rmse_llm:.4f}")
+    train_rmse_llm, test_rmse_llm, ci_llm = run_experiment(train_loader_llm, test_loader_llm, test_dataset_llm, num_features_llm, num_epochs=10)
+    print(f"\nFinal Train RMSE for Experimental (LLM) Model: {train_rmse_llm:.4f}")
+    print(f"Final Test RMSE for Experimental (LLM) Model: {test_rmse_llm:.4f}")
 
     print('\n========== 5. EXPERIMENT RESULTS ==========')
-    print(f"RMSE (Human Keywords): {rmse_human:.4f} (95% CI: {ci_human[0]:.4f}-{ci_human[1]:.4f})")
-    print(f"RMSE (LLM Keywords):   {rmse_llm:.4f} (95% CI: {ci_llm[0]:.4f}-{ci_llm[1]:.4f})")
+    print(f"Train RMSE (Human Keywords): {train_rmse_human:.4f}")
+    print(f"Test RMSE (Human Keywords): {test_rmse_human:.4f} (95% CI: {ci_human[0]:.4f}-{ci_human[1]:.4f})")
+    print(f"Train RMSE (LLM Keywords):   {train_rmse_llm:.4f}")
+    print(f"Test RMSE (LLM Keywords):   {test_rmse_llm:.4f} (95% CI: {ci_llm[0]:.4f}-{ci_llm[1]:.4f})")
     print('========================================')
 
     # For a left-tailed test (LLM RMSE < Human RMSE), we check if the upper bound of LLM CI
