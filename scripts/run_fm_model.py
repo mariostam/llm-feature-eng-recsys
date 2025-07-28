@@ -15,7 +15,7 @@ warnings.filterwarnings('ignore')
 
 def main():
     print('--- 1. Loading and Preprocessing Data ---')
-    DATA_PATH = 'data/final_dataset_with_llm_keywords.parquet'
+    DATA_PATH = 'data/final_llm_features_dataset.parquet'
 
     try:
         df = pd.read_parquet(DATA_PATH)
@@ -64,10 +64,10 @@ def main():
         test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
         test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-        return train_loader, test_loader
+        return train_loader, test_loader, test_dataset
 
-    train_loader_human, test_loader_human = create_dataloaders(X_human, y)
-    train_loader_llm, test_loader_llm = create_dataloaders(X_llm, y)
+    train_loader_human, test_loader_human, test_dataset_human = create_dataloaders(X_human, y)
+    train_loader_llm, test_loader_llm, test_dataset_llm = create_dataloaders(X_llm, y)
     print('\nDataLoaders created successfully.')
 
     class FactorizationMachine(nn.Module):
@@ -109,7 +109,19 @@ def main():
         mse = total_loss / len(test_loader.dataset)
         return np.sqrt(mse)
 
-    def run_experiment(train_loader, test_loader, num_features, num_epochs=10, learning_rate=0.01, embedding_dim=50):
+    def bootstrap_rmse(model, test_dataset, criterion, device, n_bootstraps=5000):
+        bootstrapped_rmses = []
+        dataset_size = len(test_dataset)
+        for _ in tqdm(range(n_bootstraps), desc="Bootstrapping RMSE"):
+            # Resample with replacement
+            indices = np.random.choice(dataset_size, dataset_size, replace=True)
+            bootstrapped_subset = torch.utils.data.Subset(test_dataset, indices)
+            bootstrapped_loader = DataLoader(bootstrapped_subset, batch_size=1024, shuffle=False)
+            rmse = evaluate_model(model, bootstrapped_loader, criterion, device)
+            bootstrapped_rmses.append(rmse)
+        return np.array(bootstrapped_rmses)
+
+    def run_experiment(train_loader, test_loader, test_dataset, num_features, num_epochs=10, learning_rate=0.01, embedding_dim=50):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print(f"Using device: {device}")
         model = FactorizationMachine(num_features=num_features, embedding_dim=embedding_dim).to(device)
@@ -119,30 +131,37 @@ def main():
             train_loss = train_model(model, train_loader, optimizer, criterion, device)
             test_rmse = evaluate_model(model, test_loader, criterion, device)
             print(f"Epoch {epoch+1}/{num_epochs} | Train Loss: {train_loss:.4f} | Test RMSE: {test_rmse:.4f}")
-        return evaluate_model(model, test_loader, criterion, device)
+        
+        # Perform bootstrapping for confidence interval
+        bootstrapped_rmses = bootstrap_rmse(model, test_dataset, criterion, device)
+        lower_bound = np.percentile(bootstrapped_rmses, 2.5)
+        upper_bound = np.percentile(bootstrapped_rmses, 97.5)
+        
+        return evaluate_model(model, test_loader, criterion, device), (lower_bound, upper_bound)
 
     print('\n--- 3. Starting Control Group Experiment (Human Keywords) ---')
     num_features_human = X_human.shape[1]
-    rmse_human = run_experiment(train_loader_human, test_loader_human, num_features_human)
+    rmse_human, ci_human = run_experiment(train_loader_human, test_loader_human, test_dataset_human, num_features_human)
     print(f"\\nFinal RMSE for Control (Human) Model: {rmse_human:.4f}")
 
     print('\n--- 4. Starting Experimental Group Experiment (LLM Keywords) ---')
     num_features_llm = X_llm.shape[1]
-    rmse_llm = run_experiment(train_loader_llm, test_loader_llm, num_features_llm)
+    rmse_llm, ci_llm = run_experiment(train_loader_llm, test_loader_llm, test_dataset_llm, num_features_llm)
     print(f"\\nFinal RMSE for Experimental (LLM) Model: {rmse_llm:.4f}")
 
     print('\n========== 5. EXPERIMENT RESULTS ==========')
-    print(f"RMSE (Human Keywords): {rmse_human:.4f}")
-    print(f"RMSE (LLM Keywords):   {rmse_llm:.4f}")
+    print(f"RMSE (Human Keywords): {rmse_human:.4f} (95% CI: {ci_human[0]:.4f}-{ci_human[1]:.4f})")
+    print(f"RMSE (LLM Keywords):   {rmse_llm:.4f} (95% CI: {ci_llm[0]:.4f}-{ci_llm[1]:.4f})")
     print('========================================')
 
-    improvement = rmse_human - rmse_llm
-    if improvement > 0.0001:
-        print(f"\\nHypothesis Confirmed: LLM-based model performed better by an RMSE of {improvement:.4f}.")
-    elif improvement < -0.0001:
-        print(f"\\nHypothesis Rejected: Human-based model performed better by an RMSE of {-improvement:.4f}.")
+    # For a left-tailed test (LLM RMSE < Human RMSE), we check if the upper bound of LLM CI
+    # is less than the lower bound of Human CI.
+    if ci_llm[1] < ci_human[0]:
+        print(f"\nHypothesis Confirmed: LLM-based model performed statistically significantly better (95% CI: {ci_llm[0]:.4f}-{ci_llm[1]:.4f} vs {ci_human[0]:.4f}-{ci_human[1]:.4f}).")
+    elif ci_human[1] < ci_llm[0]:
+        print(f"\nHypothesis Rejected: Human-based model performed statistically significantly better (95% CI: {ci_human[0]:.4f}-{ci_human[1]:.4f} vs {ci_llm[0]:.4f}-{ci_llm[1]:.4f}).")
     else:
-        print('\nResult: No significant difference in model performance.')
+        print('\nResult: No statistically significant difference in model performance (95% CIs overlap).')
 
 if __name__ == '__main__':
     main()
