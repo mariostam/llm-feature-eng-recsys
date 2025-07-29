@@ -14,8 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 PROCESSED_BATCHES_PREFIX = "processed_batches/"
 SAMPLE_FILENAME = "temp_sample_data.parquet"
 FINAL_OUTPUT_FILENAME = "master_dataframe_with_llm_features.parquet"
-<<<<<<< HEAD
-SAMPLE_SIZE = 5_000
+SAMPLE_SIZE = 10_000
 BATCH_SIZE = 1000
 # Controls the number of parallel API calls.
 # A higher value increases speed but also the risk of hitting rate limits.
