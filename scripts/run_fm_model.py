@@ -27,9 +27,26 @@ def set_seed(seed: int = 42):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
+    print('\nDataLoaders created successfully.')
+
+    class FactorizationMachine(nn.Module):
+        def __init__(self, num_features, embedding_dim=10):
+            super(FactorizationMachine, self).__init__()
+            self.bias = nn.Parameter(torch.randn(1))
+            self.weights = nn.Linear(num_features, 1, bias=False)
+            self.embeddings = nn.Linear(num_features, embedding_dim, bias=False)
+        def forward(self, x):
+            linear_part = self.bias + self.weights(x)
+            embedded_x = self.embeddings(x)
+            sum_of_squares = embedded_x.pow(2).sum(1, keepdim=True)
+            square_of_sum = self.embeddings(x.pow(2)).sum(1, keepdim=True)
+            factorization_part = 0.5 * (sum_of_squares - square_of_sum)
+            return linear_part + factorization_part
+
 import optuna
 
 def run_experiment(train_loader, test_loader, test_dataset, num_features, num_epochs, learning_rate=0.01, embedding_dim=50, weight_decay=0, run_bootstrap=True):
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     model = FactorizationMachine(num_features=num_features, embedding_dim=embedding_dim).to(device)
