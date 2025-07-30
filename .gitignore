@@ -21,4 +21,4 @@ __pycache__/
 .DS_Store
 
 # Backup files
-*.bakcloud_function/debug_main.py
+*.bak
