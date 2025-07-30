@@ -261,8 +261,7 @@ def main():
     print(f"Test RMSE (LLM Keywords):   {test_rmse_llm:.4f} (95% CI: {ci_llm[0]:.4f}-{ci_llm[1]:.4f})")
     print('========================================')
 
-    # For a left-tailed test (LLM RMSE < Human RMSE), we check if the upper bound of LLM CI
-    # is less than the lower bound of Human CI.
+    
     if ci_llm[1] < ci_human[0]:
         print(f"\nHypothesis Confirmed: LLM-based model performed statistically significantly better (95% CI: {ci_llm[0]:.4f}-{ci_llm[1]:.4f} vs {ci_human[0]:.4f}-{ci_human[1]:.4f}).")
     elif ci_human[1] < ci_llm[0]:

@@ -110,6 +110,15 @@ The final prompt was the result of a systematic, multi-stage refinement process:
 
 5.  **Final Parameter Tuning:** The final step was to replicate the optimal creative settings found during testing in AI Studio. The `temperature` was set to `1.0` to encourage creative and diverse thematic connections, and `top_p` was set to `0.95` to control the sampling nucleus. These parameters were explicitly added to the `GenerationConfig` in the production code to ensure the results from the pipeline would match the high quality observed during interactive development.
 
+     The choice of `temperature=1.0` was a deliberate decision to encourage creative and diverse
+     thematic connections from the LLM. While a lower temperature (e.g., 0) would yield more
+     deterministic and reproducible outputs, it can also lead to more generic or repetitive
+     responses. For the purpose of generating rich, compelling, and thematically insightful
+     keywords, allowing for a degree of variability and creativity was deemed beneficial, even if
+     it introduced a subtle level of non-determinism compared to a strictly deterministic setting.
+     This ensured the LLM could explore a wider range of relevant thematic concepts, enhancing the
+     quality of the generated features.
+
 This rigorous, test-driven approach resulted in a final prompt that is concise, effective, and precisely configured for the task, providing high confidence in the quality of the feature generation pipeline.
 
 ### 2.4. Cloud-Native Development Environment
@@ -123,6 +132,48 @@ Key components of this environment included:
 *   **Google AI Studio:** Employed for the iterative development and refinement of LLM prompts, offering a web-based playground for rapid prototyping and testing of prompt engineering strategies.
 
 This cloud-centric approach ensured that all computational tasks were performed in a scalable and managed environment, minimizing local setup complexities and maximizing development efficiency.
+
+### 2.4.1. Robust Google Colaboratory Workflow
+
+The integration with Google Colaboratory was further refined to ensure a robust, reproducible, and independent execution environment, addressing potential synchronization and dependency issues.
+
+**Previous Challenges:**
+Initially, the workflow relied on Google Drive's synchronization of the local Git repository. This approach presented several challenges:
+*   **Synchronization Latency:** Changes pushed to GitHub from a local machine might not immediately reflect in Google Drive, leading to outdated code being used in Colab.
+*   **Hidden File Sync Issues:** Google Drive for Desktop, by default, attempts to sync all files, including Git's internal `.git/` directory, `.ipynb_checkpoints/`, and sensitive `.env` files. This led to significant performance overhead, failed synchronizations, and potential security risks for API keys.
+*   **Dependency on Local Setup:** The Colab environment was indirectly dependent on the local machine's Google Drive client for code updates.
+
+**Enhanced Workflow: Direct GitHub Cloning:**
+To mitigate these issues, the Colab workflow was redesigned to directly clone the project repository from GitHub at the start of each session. This approach ensures that the Colab environment always operates on the absolute latest version of the code, independent of local Google Drive synchronization.
+
+The updated Colab notebook (`training_fm.ipynb`) now includes the following sequence of operations:
+
+1.  **Google Cloud Authentication:**
+    ```python
+    from google.colab import auth
+    auth.authenticate_user()
+    ```
+    This step explicitly authenticates the Colab session with Google Cloud, granting necessary permissions to access Google Cloud Storage (GCS) buckets where the processed data resides. This is crucial for reading the final dataset (`final_llm_features_dataset.parquet`) directly from GCS.
+
+2.  **Clean Repository Cloning:**
+    ```python
+    !rm -rf llm-feature-eng-recsys
+    !git clone https://github.com/mariostam/llm-feature-eng-recsys.git
+    %cd llm-feature-eng-recsys
+    ```
+    Before cloning, any existing project directory (`llm-feature-eng-recsys`) is forcefully removed. This guarantees a clean slate and prevents "destination path already exists" errors. The repository is then cloned directly from GitHub, ensuring the Colab environment has the most up-to-date code. The `%cd` command changes the working directory into the cloned repository.
+
+3.  **Dependency Installation:**
+    ```python
+    !pip install pandas numpy torch scikit-learn gcsfs optuna
+    ```
+    All required Python libraries, including `optuna` for hyperparameter tuning, are installed directly within the Colab runtime. This ensures that the environment has all necessary dependencies for the project's scripts.
+
+**Benefits of the Robust Workflow:**
+*   **Guaranteed Code Freshness:** Every Colab session starts with the latest code directly from GitHub, eliminating sync delays.
+*   **Enhanced Reproducibility:** The environment is consistently set up from a version-controlled source, improving the reproducibility of experiments.
+*   **Elimination of Sync Issues:** By not relying on Google Drive for code synchronization, problems related to hidden files (`.git/`, `.env`) and large file transfers are completely bypassed.
+*   **Independent Execution:** The notebook can be run from any Colab instance without requiring prior local setup or manual `git pull` operations.
 
 ---
 
@@ -355,7 +406,7 @@ Root Mean Squared Error (RMSE) was chosen as the primary evaluation metric. RMSE
 To provide a statistically sound comparison and quantify the uncertainty of the RMSE estimates, a **bootstrapping** methodology was employed. Bootstrapping is a non-parametric resampling technique that allows for the estimation of the sampling distribution of a statistic (in this case, RMSE) without making assumptions about the underlying data distribution.
 
 The process for each model (Human Keywords and LLM Keywords) involved:
-1.  **Resampling:** From the original test set (20% of the 10,000-row dataset, approximately 2,000 samples), 5,000 bootstrap samples were generated. Each bootstrap sample was created by drawing data points *with replacement* from the original test set, ensuring each bootstrap sample had the same size as the original test set.
+1.  **Resampling:** From the original test set (20% of the 10,000-row dataset, approximately 2,000 samples), 10,000 bootstrap samples were generated. Each bootstrap sample was created by drawing data points *with replacement* from the original test set, ensuring each bootstrap sample had the same size as the original test set.
 2.  **Re-evaluation:** The already trained Factorization Machine model was evaluated on each of these 5,000 bootstrap samples, yielding a distribution of 5,000 bootstrapped RMSE values.
 3.  **Confidence Interval Calculation:** The 95% confidence interval for the RMSE was then calculated by taking the 2.5th and 97.5th percentiles of the distribution of bootstrapped RMSE values. This interval provides a range within which the true RMSE of the model is likely to fall with 95% confidence.
 
@@ -395,6 +446,29 @@ Based on these results, the conclusion was:
 **Hypothesis Confirmed: LLM-based model performed statistically significantly better (95% CI: 1.0711-1.1868 vs 4.2148-5.6136).**
 
 This outcome provides strong evidence that the LLM-generated thematic keywords significantly enhance the predictive accuracy of the Factorization Machine model in this recommender system context.
+
+#### 6.4.6. Hyperparameter Optimization with Optuna
+
+To ensure that both the human-keyword and LLM-keyword Factorization Machine models were evaluated at their optimal performance, a systematic hyperparameter tuning process was implemented using the **Optuna** framework. This approach addresses the potential bias of comparing a new, optimized feature set against a baseline model that might not be performing at its peak.
+
+**Rationale for Tuning Both Models:**
+While initial experiments indicated the superiority of LLM-generated keywords, a rigorous scientific comparison necessitates that both the control (human-keyword) and experimental (LLM-keyword) models are individually optimized. This ensures that any observed performance differences are attributable to the feature sets themselves, rather than suboptimal hyperparameter choices for one of the models.
+
+**Key Hyperparameters Tuned:**
+The optimization focused on the most impactful hyperparameters of the Factorization Machine model:
+*   **`embedding_dim` (Latent Factors):** The dimensionality of the latent vectors (embeddings) assigned to each feature. This parameter controls the model's capacity to capture complex interactions. Tuned range: `[10, 100]` (integer).
+*   **`learning_rate`:** The step size at which the model's weights are updated during training. An appropriate learning rate is crucial for efficient convergence. Tuned range: `[1e-4, 1e-1]` (logarithmic scale).
+*   **`weight_decay` (L2 Regularization):** A regularization term added to the loss function to prevent overfitting by penalizing large weights. Tuned range: `[1e-6, 1e-1]` (logarithmic scale).
+
+**Optuna Integration and Methodology:**
+The `scripts/run_fm_model.py` script was refactored to integrate Optuna. The core training and evaluation logic for a single model was encapsulated within an `objective` function. This function takes an Optuna `trial` object, which suggests hyperparameter values from the defined search spaces. The `objective` function then trains the model with these parameters and returns the validation RMSE.
+
+The optimization process involved:
+1.  **Separate Studies:** Two independent Optuna studies were conducted: one for the human-keyword model and one for the LLM-keyword model. Each study ran for 50 trials (`n_trials=50`), allowing Optuna's intelligent samplers to explore the hyperparameter space effectively.
+2.  **Reproducibility during Tuning:** Crucially, the `set_seed(42)` function was maintained at the beginning of each trial within the `objective` function. This ensures that while Optuna explores different hyperparameters, the internal randomness (e.g., data shuffling, initial model weights) for each specific trial is consistent. This guarantees that any performance difference observed between trials is solely due to the hyperparameter changes, not random chance.
+3.  **Final Model Training:** After the optimal hyperparameters were identified for both models, the `run_fm_model.py` script then proceeds to train each model one final time using its respective best-found parameters. This final training run also includes the bootstrapping process for robust confidence interval calculation, as detailed in Section 6.4.2.
+
+This comprehensive tuning approach ensures that the comparison between human-generated and LLM-generated features is based on the best possible performance of each model, strengthening the validity and generalizability of the research findings.
 
 ---
 ### How the Factorization Machine Script Works
