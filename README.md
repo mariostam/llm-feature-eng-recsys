@@ -51,7 +51,6 @@ The project's methodology is structured into three interconnected modules, ensur
 *   `data/`: Placeholder for raw and processed data files (e.g., `master_dataframe.parquet`, `final_llm_features_dataset.parquet`).
 *   `notebooks/`: Jupyter notebooks for data unification (`01-data-unification.ipynb`), merging processed batches (`02-merge-batches.ipynb`), and the main model training/evaluation workflow (`training_fm.ipynb`).
 *   `scripts/`: Python scripts, including `run_fm_model.py` for the core experiment.
-*   `thesis_project_documentation.md`: Comprehensive documentation of the project's design, implementation, and results.
 
 ## How to Run/Reproduce
 
