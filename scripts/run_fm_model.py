@@ -146,7 +146,7 @@ def objective(trial, train_loader, test_loader, test_dataset, num_features):
 def create_dataloaders(X, y, test_size=0.2, batch_size=1024, random_state=42):
     indices = np.arange(X.shape[0])
     train_indices, test_indices = train_test_split(indices, test_size=test_size, random_state=random_state)
-    X_train, X_test = X[train_indices], X[test_indices]
+    X_train, X_test = X.tocsr()[train_indices], X.tocsr()[test_indices]
     y_train, y_test = y[train_indices], y[test_indices]
     X_train_tensor = torch.from_numpy(X_train.toarray()).float()
     X_test_tensor = torch.from_numpy(X_test.toarray()).float()
