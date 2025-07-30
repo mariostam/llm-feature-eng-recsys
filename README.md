@@ -52,18 +52,6 @@ The project's methodology is structured into three interconnected modules, ensur
 *   `notebooks/`: Jupyter notebooks for data unification (`01-data-unification.ipynb`), merging processed batches (`02-merge-batches.ipynb`), and the main model training/evaluation workflow (`training_fm.ipynb`).
 *   `scripts/`: Python scripts, including `run_fm_model.py` for the core experiment.
 
-## How to Run/Reproduce
-
-The primary way to reproduce the model training and evaluation experiments is via Google Colaboratory:
-
-1.  **Open `notebooks/training_fm.ipynb` in Google Colab.**
-2.  **Authenticate with Google Cloud:** The notebook includes a cell for `google.colab.auth.authenticate_user()` to grant access to your GCS bucket where the data resides.
-3.  **Clone the Repository:** The notebook will automatically clone this GitHub repository, ensuring you're working with the latest code.
-4.  **Install Dependencies:** All necessary Python libraries will be installed within the Colab environment.
-5.  **Execute Cells:** Run the cells sequentially to perform data loading, feature engineering, hyperparameter tuning, model training, and evaluation.
-
-*Note: Running the full LLM feature generation pipeline requires deploying the Cloud Functions as described in the `thesis_project_documentation.md` and having access to the Gemini API.*
-
 ## Conclusion & Future Work
 
 This project provides a robust framework for evaluating LLM-generated features in recommender systems. While the initial hypothesis was rejected, the findings offer valuable insights into the current state of LLM-powered feature engineering. Future work could explore more advanced prompt engineering, different LLM architectures, hybrid feature approaches, and deeper qualitative analysis of the generated keywords to understand the observed performance differences.
