@@ -82,7 +82,7 @@ def evaluate_model(model, test_loader, criterion, device):
     mse = total_loss / len(test_loader.dataset)
     return np.sqrt(mse)
 
-def bootstrap_rmse(model, test_dataset, criterion, device, n_bootstraps=5000):
+def bootstrap_rmse(model, test_dataset, criterion, device, n_bootstraps=10000):
     bootstrapped_rmses = []
     dataset_size = len(test_dataset)
     for _ in tqdm(range(n_bootstraps), desc="Bootstrapping RMSE"):
