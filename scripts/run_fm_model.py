@@ -30,6 +30,19 @@ def set_seed(seed: int = 42):
 
     print('\nDataLoaders created successfully.')
 
+def create_feature_matrix(df, keyword_column):
+    # Convert user_id and movie_id to one-hot encoded features
+    user_features = pd.get_dummies(df['user_id_cat'], prefix='user')
+    movie_features = pd.get_dummies(df['movie_id_cat'], prefix='movie')
+
+    # Use CountVectorizer for keywords
+    vectorizer = CountVectorizer(tokenizer=lambda x: x.split(', '))
+    keyword_features = vectorizer.fit_transform(df[keyword_column])
+
+    # Combine all features
+    X = hstack([user_features, movie_features, keyword_features])
+    return X
+
 class FactorizationMachine(nn.Module):
     def __init__(self, num_features, embedding_dim=10):
         super(FactorizationMachine, self).__init__()
