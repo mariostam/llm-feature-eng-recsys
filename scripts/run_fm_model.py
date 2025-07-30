@@ -29,6 +29,31 @@ def set_seed(seed: int = 42):
 
 import optuna
 
+def run_experiment(train_loader, test_loader, test_dataset, num_features, num_epochs, learning_rate=0.01, embedding_dim=50, weight_decay=0, run_bootstrap=True):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    model = FactorizationMachine(num_features=num_features, embedding_dim=embedding_dim).to(device)
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    for epoch in tqdm(range(num_epochs), desc="Training Epochs"):
+        train_model(model, train_loader, optimizer, criterion, device)
+        train_rmse = evaluate_model(model, train_loader, criterion, device)
+        test_rmse = evaluate_model(model, test_loader, criterion, device)
+        print(f"Epoch {epoch+1}/{num_epochs} | Train RMSE: {train_rmse:.4f} | Test RMSE: {test_rmse:.4f}")
+    
+    ci = (0, 0)
+    if run_bootstrap:
+        # Perform bootstrapping for confidence interval
+        bootstrapped_rmses = bootstrap_rmse(model, test_dataset, criterion, device)
+        lower_bound = np.percentile(bootstrapped_rmses, 2.5)
+        upper_bound = np.percentile(bootstrapped_rmses, 97.5)
+        ci = (lower_bound, upper_bound)
+    
+    final_train_rmse = evaluate_model(model, train_loader, criterion, device)
+    final_test_rmse = evaluate_model(model, test_loader, criterion, device)
+
+    return final_train_rmse, final_test_rmse, ci
+
 def objective(trial, train_loader, test_loader, test_dataset, num_features):
     # Define hyperparameters to tune
     embedding_dim = trial.suggest_int('embedding_dim', 10, 100)
