@@ -222,7 +222,7 @@ def main():
 
     print('\n--- 3. Starting Hyperparameter Tuning for Human Model ---')
     study_human = optuna.create_study(direction='minimize')
-    study_human.optimize(lambda trial: objective(trial, X_human, y, X_human.shape[1]), n_trials=100)
+    study_human.optimize(lambda trial: objective(trial, X_human, y, X_human.shape[1]), n_trials=120)
     best_params_human = study_human.best_trial.params
     print("Best trial for Human Model:")
     print(f"  Value: {study_human.best_trial.value}")
@@ -232,7 +232,7 @@ def main():
 
     print('\n--- 4. Starting Hyperparameter Tuning for LLM Model ---')
     study_llm = optuna.create_study(direction='minimize')
-    study_llm.optimize(lambda trial: objective(trial, X_llm, y, X_llm.shape[1]), n_trials=100)
+    study_llm.optimize(lambda trial: objective(trial, X_llm, y, X_llm.shape[1]), n_trials=120)
     best_params_llm = study_llm.best_trial.params
     print("Best trial for LLM Model:")
     print(f"  Value: {study_llm.best_trial.value}")
