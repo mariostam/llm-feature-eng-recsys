@@ -133,7 +133,7 @@ def objective(trial, train_loader, test_loader, test_dataset, num_features):
     embedding_dim = trial.suggest_int('embedding_dim', 10, 100)
     learning_rate = trial.suggest_float('learning_rate', 1e-4, 1e-1, log=True)
     weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-1, log=True)
-    num_epochs = 10 # Using a fixed number of epochs for tuning
+    num_epochs = trial.suggest_int('num_epochs', 5, 50) # Allow Optuna to tune the number of epochs
 
     # Run the experiment with the suggested hyperparameters
     _, test_rmse, _, _ = run_experiment(
@@ -234,7 +234,7 @@ def main():
     print('\n--- 5. Starting Final Control Group Experiment (Human Keywords) with Best Hyperparameters ---')
     num_features_human = X_human.shape[1]
     train_rmse_human, test_rmse_human, ci_95_human, ci_99_human = run_experiment(
-        train_loader_human,         test_loader_human,         test_dataset_human,         num_features_human,         num_epochs=10, # A fixed number of epochs for the final run
+        train_loader_human,         test_loader_human,         test_dataset_human,         num_features_human,         num_epochs=best_params_human['num_epochs'],
         learning_rate=best_params_human['learning_rate'],         embedding_dim=best_params_human['embedding_dim'],        weight_decay=best_params_human['weight_decay']
     )
     print(f"\nFinal Train RMSE for Control (Human) Model: {train_rmse_human:.4f}")
@@ -244,7 +244,7 @@ def main():
     print('\n--- 6. Starting Final Experimental Group Experiment (LLM Keywords) with Best Hyperparameters ---')
     num_features_llm = X_llm.shape[1]
     train_rmse_llm, test_rmse_llm, ci_95_llm, ci_99_llm = run_experiment(
-        train_loader_llm,         test_loader_llm,         test_dataset_llm,         num_features_llm,         num_epochs=10, # A fixed number of epochs for the final run
+        train_loader_llm,         test_loader_llm,         test_dataset_llm,         num_features_llm,         num_epochs=best_params_llm['num_epochs'],
         learning_rate=best_params_llm['learning_rate'],         embedding_dim=best_params_llm['embedding_dim'],        weight_decay=best_params_llm['weight_decay']
     )
     print(f"\nFinal Train RMSE for Experimental (LLM) Model: {train_rmse_llm:.4f}")
