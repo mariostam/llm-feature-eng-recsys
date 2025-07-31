@@ -10,7 +10,7 @@ import random
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# --- Configuration ---
+# Configuration
 PROCESSED_BATCHES_PREFIX = "processed_batches/"
 SAMPLE_FILENAME = "temp_sample_data.parquet"
 FINAL_OUTPUT_FILENAME = "master_dataframe_with_llm_features.parquet"
@@ -21,7 +21,7 @@ BATCH_SIZE = 1000
 # A higher value increases speed but also the risk of hitting rate limits.
 MAX_WORKERS = 20
 
-# --- Gemini API Configuration ---
+# Gemini API Configuration
 try:
     api_key = os.environ.get('GEMINI_API_KEY')
     if not api_key:

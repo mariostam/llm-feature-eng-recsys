@@ -107,18 +107,26 @@ def run_experiment(train_loader, test_loader, test_dataset, num_features, num_ep
         test_rmse = evaluate_model(model, test_loader, criterion, device)
         print(f"Epoch {epoch+1}/{num_epochs} | Train RMSE: {train_rmse:.4f} | Test RMSE: {test_rmse:.4f}")
     
-    ci = (0, 0)
+    ci_95 = (0, 0)
+    ci_99 = (0, 0)
     if run_bootstrap:
         # Perform bootstrapping for confidence interval
         bootstrapped_rmses = bootstrap_rmse(model, test_dataset, criterion, device)
-        lower_bound = np.percentile(bootstrapped_rmses, 2.5)
-        upper_bound = np.percentile(bootstrapped_rmses, 97.5)
-        ci = (lower_bound, upper_bound)
+        
+        # 95% CI
+        lower_bound_95 = np.percentile(bootstrapped_rmses, 2.5)
+        upper_bound_95 = np.percentile(bootstrapped_rmses, 97.5)
+        ci_95 = (lower_bound_95, upper_bound_95)
+
+        # 99% CI
+        lower_bound_99 = np.percentile(bootstrapped_rmses, 0.5)
+        upper_bound_99 = np.percentile(bootstrapped_rmses, 99.5)
+        ci_99 = (lower_bound_99, upper_bound_99)
     
     final_train_rmse = evaluate_model(model, train_loader, criterion, device)
     final_test_rmse = evaluate_model(model, test_loader, criterion, device)
 
-    return final_train_rmse, final_test_rmse, ci
+    return final_train_rmse, final_test_rmse, ci_95, ci_99
 
 def objective(trial, train_loader, test_loader, test_dataset, num_features):
     # Define hyperparameters to tune
@@ -128,7 +136,7 @@ def objective(trial, train_loader, test_loader, test_dataset, num_features):
     num_epochs = 10 # Using a fixed number of epochs for tuning
 
     # Run the experiment with the suggested hyperparameters
-    _, test_rmse, _ = run_experiment(
+    _, test_rmse, _, _ = run_experiment(
         train_loader,
         test_loader,
         test_dataset,
@@ -225,15 +233,9 @@ def main():
 
     print('\n--- 5. Starting Final Control Group Experiment (Human Keywords) with Best Hyperparameters ---')
     num_features_human = X_human.shape[1]
-    train_rmse_human, test_rmse_human, ci_human = run_experiment(
-        train_loader_human, \
-        test_loader_human, \
-        test_dataset_human, \
-        num_features_human, \
-        num_epochs=10, # A fixed number of epochs for the final run
-        learning_rate=best_params_human['learning_rate'], \
-        embedding_dim=best_params_human['embedding_dim'],\
-        weight_decay=best_params_human['weight_decay']
+    train_rmse_human, test_rmse_human, ci_95_human, ci_99_human = run_experiment(
+        train_loader_human,         test_loader_human,         test_dataset_human,         num_features_human,         num_epochs=10, # A fixed number of epochs for the final run
+        learning_rate=best_params_human['learning_rate'],         embedding_dim=best_params_human['embedding_dim'],        weight_decay=best_params_human['weight_decay']
     )
     print(f"\nFinal Train RMSE for Control (Human) Model: {train_rmse_human:.4f}")
     print(f"Final Test RMSE for Control (Human) Model: {test_rmse_human:.4f}")
@@ -241,33 +243,34 @@ def main():
 
     print('\n--- 6. Starting Final Experimental Group Experiment (LLM Keywords) with Best Hyperparameters ---')
     num_features_llm = X_llm.shape[1]
-    train_rmse_llm, test_rmse_llm, ci_llm = run_experiment(
-        train_loader_llm, \
-        test_loader_llm, \
-        test_dataset_llm, \
-        num_features_llm, \
-        num_epochs=10, # A fixed number of epochs for the final run
-        learning_rate=best_params_llm['learning_rate'], \
-        embedding_dim=best_params_llm['embedding_dim'],\
-        weight_decay=best_params_llm['weight_decay']
+    train_rmse_llm, test_rmse_llm, ci_95_llm, ci_99_llm = run_experiment(
+        train_loader_llm,         test_loader_llm,         test_dataset_llm,         num_features_llm,         num_epochs=10, # A fixed number of epochs for the final run
+        learning_rate=best_params_llm['learning_rate'],         embedding_dim=best_params_llm['embedding_dim'],        weight_decay=best_params_llm['weight_decay']
     )
     print(f"\nFinal Train RMSE for Experimental (LLM) Model: {train_rmse_llm:.4f}")
     print(f"Final Test RMSE for Experimental (LLM) Model: {test_rmse_llm:.4f}")
 
     print('\n========== 7. EXPERIMENT RESULTS ==========')
     print(f"Train RMSE (Human Keywords): {train_rmse_human:.4f}")
-    print(f"Test RMSE (Human Keywords): {test_rmse_human:.4f} (95% CI: {ci_human[0]:.4f}-{ci_human[1]:.4f})")
+    print(f"Test RMSE (Human Keywords): {test_rmse_human:.4f} (95% CI: {ci_95_human[0]:.4f}-{ci_95_human[1]:.4f}) (99% CI: {ci_99_human[0]:.4f}-{ci_99_human[1]:.4f})")
     print(f"Train RMSE (LLM Keywords):   {train_rmse_llm:.4f}")
-    print(f"Test RMSE (LLM Keywords):   {test_rmse_llm:.4f} (95% CI: {ci_llm[0]:.4f}-{ci_llm[1]:.4f})")
+    print(f"Test RMSE (LLM Keywords):   {test_rmse_llm:.4f} (95% CI: {ci_95_llm[0]:.4f}-{ci_95_llm[1]:.4f}) (99% CI: {ci_99_llm[0]:.4f}-{ci_99_llm[1]:.4f})")
     print('========================================')
 
     
-    if ci_llm[1] < ci_human[0]:
-        print(f"\nHypothesis Confirmed: LLM-based model performed statistically significantly better (95% CI: {ci_llm[0]:.4f}-{ci_llm[1]:.4f} vs {ci_human[0]:.4f}-{ci_human[1]:.4f}).")
-    elif ci_human[1] < ci_llm[0]:
-        print(f"\nHypothesis Rejected: Human-based model performed statistically significantly better (95% CI: {ci_human[0]:.4f}-{ci_human[1]:.4f} vs {ci_llm[0]:.4f}-{ci_llm[1]:.4f}).")
+    if ci_95_llm[1] < ci_95_human[0]:
+        print(f"\nHypothesis Confirmed (at 95% confidence): LLM-based model performed statistically significantly better (95% CI: {ci_95_llm[0]:.4f}-{ci_95_llm[1]:.4f} vs {ci_95_human[0]:.4f}-{ci_95_human[1]:.4f}).")
+    elif ci_95_human[1] < ci_95_llm[0]:
+        print(f"\nHypothesis Rejected (at 95% confidence): Human-based model performed statistically significantly better (95% CI: {ci_95_human[0]:.4f}-{ci_95_human[1]:.4f} vs {ci_95_llm[0]:.4f}-{ci_95_llm[1]:.4f}).")
     else:
         print('\nResult: No statistically significant difference in model performance (95% CIs overlap).')
+
+    if ci_99_llm[1] < ci_99_human[0]:
+        print(f"\nHypothesis Confirmed (at 99% confidence): LLM-based model performed statistically significantly better (99% CI: {ci_99_llm[0]:.4f}-{ci_99_llm[1]:.4f} vs {ci_99_human[0]:.4f}-{ci_99_human[1]:.4f}).")
+    elif ci_99_human[1] < ci_99_llm[0]:
+        print(f"\nHypothesis Rejected (at 99% confidence): Human-based model performed statistically significantly better (99% CI: {ci_99_human[0]:.4f}-{ci_99_human[1]:.4f} vs {ci_99_llm[0]:.4f}-{ci_99_llm[1]:.4f}).")
+    else:
+        print('\nResult: No statistically significant difference in model performance (99% CIs overlap).')
 
 
 if __name__ == '__main__':
