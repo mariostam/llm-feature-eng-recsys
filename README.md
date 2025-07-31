@@ -52,6 +52,14 @@ The project's methodology is structured into three interconnected modules, ensur
 *   `notebooks/`: Jupyter notebooks for data unification (`01-data-unification.ipynb`), merging processed batches (`02-merge-batches.ipynb`), and the main model training/evaluation workflow (`training_fm.ipynb`).
 *   `scripts/`: Python scripts, including `run_fm_model.py` for the core experiment.
 
+## How to Run the Experiment (using Google Colab)
+
+To easily reproduce the experiment and run the Factorization Machine model training and evaluation:
+
+1.  **Open in Colab:** Click on the `training_fm.ipynb` notebook located in the `notebooks/` directory and open it directly in Google Colaboratory.
+2.  **Select GPU Runtime:** In Colab, go to `Runtime > Change runtime type` and select `GPU` as the hardware accelerator. This will significantly speed up model training.
+3.  **Run All Cells:** Execute all cells in the notebook (`Runtime > Run all`). The notebook will automatically clone the repository, install dependencies, and run the full experiment, including hyperparameter tuning and statistical evaluation.
+
 
 ## Conclusion & Future Work
 
