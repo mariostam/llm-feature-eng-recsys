@@ -41,7 +41,7 @@ def create_feature_matrix(df, keyword_column):
 
     # Combine all features
     X = hstack([user_features, movie_features, keyword_features])
-    return X
+    return X, vectorizer
 
 class FactorizationMachine(nn.Module):
     def __init__(self, num_features, embedding_dim=10):
@@ -130,7 +130,7 @@ def run_experiment(train_loader, test_loader, test_dataset, num_features, num_ep
     final_train_rmse = evaluate_model(model, train_loader, criterion, device)
     final_test_rmse = evaluate_model(model, test_loader, criterion, device)
 
-    return final_train_rmse, final_test_rmse, ci_95, ci_99
+    return final_train_rmse, final_test_rmse, ci_95, ci_99, model
 
 def objective(trial, X, y, num_features):
     # Define hyperparameters to tune
@@ -186,10 +186,46 @@ def seed_worker(worker_id):
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
+def inspect_linear_weights(model, df, vectorizer, model_type):
+    print(f"\n--- Linear Weights Inspection for {model_type} Model ---")
+    weights = model.weights.weight.detach().cpu().numpy().flatten()
+
+    num_users = df['user_id_cat'].nunique()
+    num_movies = df['movie_id_cat'].nunique()
+    num_keywords = len(vectorizer.vocabulary_)
+
+    # User weights
+    user_weights = weights[0:num_users]
+    avg_user_weight = np.mean(np.abs(user_weights))
+    print(f"Average absolute user weight: {avg_user_weight:.4f}")
+
+    # Movie weights
+    movie_weights = weights[num_users:num_users + num_movies]
+    avg_movie_weight = np.mean(np.abs(movie_weights))
+    print(f"Average absolute movie weight: {avg_movie_weight:.4f}")
+
+    # Keyword weights
+    keyword_weights = weights[num_users + num_movies:num_users + num_movies + num_keywords]
+    avg_keyword_weight = np.mean(np.abs(keyword_weights))
+    print(f"Average absolute keyword weight: {avg_keyword_weight:.4f}")
+
+    # Compare
+    max_avg_weight = max(avg_user_weight, avg_movie_weight, avg_keyword_weight)
+    if max_avg_weight == avg_user_weight:
+        print("User features appear to have the highest average linear weight.")
+    elif max_avg_weight == avg_movie_weight:
+        print("Movie features appear to have the highest average linear weight.")
+    else:
+        print("Keyword features appear to have the highest average linear weight.")
+
+    print("Note: This only considers the linear part of the FM. The factorization part (embeddings) also contributes significantly.")
+
 def main():
     set_seed(42)
     print('--- 1. Loading and Preprocessing Data ---')
-    DATA_PATH = 'gs://llm-feature-engineering-thesis-bucket/final_llm_features_dataset.parquet'
+    # For reproducibility by other users, load the dataset directly from GitHub.
+    # This avoids the need for Google Cloud Storage setup.
+    DATA_PATH = 'https://github.com/mariostam/llm-feature-eng-recsys/raw/main/data/final_llm_features_dataset.parquet'
 
     try:
         df = pd.read_parquet(DATA_PATH)
@@ -209,8 +245,8 @@ def main():
     df['user_id_cat'] = df['user_id'].astype('category').cat.codes
     df['movie_id_cat'] = df['movie_id'].astype('category').cat.codes
 
-    X_human = create_feature_matrix(df.copy(), 'human_keywords')
-    X_llm = create_feature_matrix(df.copy(), 'llm_keywords')
+    X_human, vectorizer_human = create_feature_matrix(df.copy(), 'human_keywords')
+    X_llm, vectorizer_llm = create_feature_matrix(df.copy(), 'llm_keywords')
     y = df['rating'].values
 
     print(f"Control (Human) Feature Matrix Shape: {X_human.shape}")
@@ -244,7 +280,7 @@ def main():
     print('\n--- 5. Starting Final Control Group Experiment (Human Keywords) with Best Hyperparameters ---')
     num_features_human = X_human.shape[1]
     train_loader_human, test_loader_human, test_dataset_human = create_dataloaders(X_human, y, batch_size=best_params_human['batch_size'])
-    train_rmse_human, test_rmse_human, ci_95_human, ci_99_human = run_experiment(
+    train_rmse_human, test_rmse_human, ci_95_human, ci_99_human, model_human = run_experiment(
         train_loader_human,         test_loader_human,         test_dataset_human,         num_features_human,         num_epochs=best_params_human['num_epochs'],
         learning_rate=best_params_human['learning_rate'],         embedding_dim=best_params_human['embedding_dim'],        weight_decay=best_params_human['weight_decay'],
         optimizer_name=best_params_human['optimizer']
@@ -252,17 +288,20 @@ def main():
     print(f"\nFinal Train RMSE for Control (Human) Model: {train_rmse_human:.4f}")
     print(f"Final Test RMSE for Control (Human) Model: {test_rmse_human:.4f}")
 
-
     print('\n--- 6. Starting Final Experimental Group Experiment (LLM Keywords) with Best Hyperparameters ---')
     num_features_llm = X_llm.shape[1]
     train_loader_llm, test_loader_llm, test_dataset_llm = create_dataloaders(X_llm, y, batch_size=best_params_llm['batch_size'])
-    train_rmse_llm, test_rmse_llm, ci_95_llm, ci_99_llm = run_experiment(
+    train_rmse_llm, test_rmse_llm, ci_95_llm, ci_99_llm, model_llm = run_experiment(
         train_loader_llm,         test_loader_llm,         test_dataset_llm,         num_features_llm,         num_epochs=best_params_llm['num_epochs'],
         learning_rate=best_params_llm['learning_rate'],         embedding_dim=best_params_llm['embedding_dim'],        weight_decay=best_params_llm['weight_decay'],
         optimizer_name=best_params_llm['optimizer']
     )
 
-    print('\n========== 7. EXPERIMENT RESULTS ==========')
+    print('\n--- 7. Inspecting Linear Weights ---')
+    inspect_linear_weights(model_human, df, vectorizer_human, "Human")
+    inspect_linear_weights(model_llm, df, vectorizer_llm, "LLM")
+
+    print('\n========== 8. EXPERIMENT RESULTS ==========')
     print(f"Train RMSE (Human Keywords): {train_rmse_human:.4f}")
     print(f"Test RMSE (Human Keywords): {test_rmse_human:.4f} (95% CI: {ci_95_human[0]:.4f}-{ci_95_human[1]:.4f}) (99% CI: {ci_99_human[0]:.4f}-{ci_99_human[1]:.4f})")
     print(f"Train RMSE (LLM Keywords):   {train_rmse_llm:.4f}")
