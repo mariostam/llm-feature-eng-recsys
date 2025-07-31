@@ -94,13 +94,16 @@ def bootstrap_rmse(model, test_dataset, criterion, device, n_bootstraps=10000):
         bootstrapped_rmses.append(rmse)
     return np.array(bootstrapped_rmses)
 
-def run_experiment(train_loader, test_loader, test_dataset, num_features, num_epochs, learning_rate=0.01, embedding_dim=50, weight_decay=0, run_bootstrap=True):
+def run_experiment(train_loader, test_loader, test_dataset, num_features, num_epochs, learning_rate=0.01, embedding_dim=50, weight_decay=0, optimizer_name='Adam', run_bootstrap=True):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     model = FactorizationMachine(num_features=num_features, embedding_dim=embedding_dim).to(device)
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    if optimizer_name == 'Adam':
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    elif optimizer_name == 'SGD':
+        optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     for epoch in tqdm(range(num_epochs), desc="Training Epochs"):
         train_model(model, train_loader, optimizer, criterion, device)
         train_rmse = evaluate_model(model, train_loader, criterion, device)
@@ -128,12 +131,16 @@ def run_experiment(train_loader, test_loader, test_dataset, num_features, num_ep
 
     return final_train_rmse, final_test_rmse, ci_95, ci_99
 
-def objective(trial, train_loader, test_loader, test_dataset, num_features):
+def objective(trial, X, y, num_features):
     # Define hyperparameters to tune
     embedding_dim = trial.suggest_int('embedding_dim', 10, 100)
     learning_rate = trial.suggest_float('learning_rate', 1e-4, 1e-1, log=True)
     weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-1, log=True)
     num_epochs = trial.suggest_int('num_epochs', 5, 50) # Allow Optuna to tune the number of epochs
+    optimizer_name = trial.suggest_categorical('optimizer', ['Adam', 'SGD'])
+    batch_size = trial.suggest_int('batch_size', 32, 2048, log=True)
+
+    train_loader, test_loader, test_dataset = create_dataloaders(X, y, batch_size=batch_size)
 
     # Run the experiment with the suggested hyperparameters
     _, test_rmse, _, _ = run_experiment(
@@ -145,13 +152,14 @@ def objective(trial, train_loader, test_loader, test_dataset, num_features):
         learning_rate=learning_rate,
         embedding_dim=embedding_dim,
         weight_decay=weight_decay,
+        optimizer_name=optimizer_name,
         run_bootstrap=False # Disable bootstrapping during tuning for speed
     )
     return test_rmse
 
 
 
-def create_dataloaders(X, y, test_size=0.2, batch_size=1024, random_state=42):
+def create_dataloaders(X, y, test_size=0.2, batch_size, random_state=42):
     indices = np.arange(X.shape[0])
     train_indices, test_indices = train_test_split(indices, test_size=test_size, random_state=random_state)
     X_train, X_test = X.tocsr()[train_indices], X.tocsr()[test_indices]
@@ -207,13 +215,14 @@ def main():
     print(f"Control (Human) Feature Matrix Shape: {X_human.shape}")
     print(f"Experimental (LLM) Feature Matrix Shape: {X_llm.shape}")
 
-    train_loader_human, test_loader_human, test_dataset_human = create_dataloaders(X_human, y)
-    train_loader_llm, test_loader_llm, test_dataset_llm = create_dataloaders(X_llm, y)
+    # These will be created inside the objective function with the suggested batch size
+    train_loader_human, test_loader_human, test_dataset_human = None, None, None
+    train_loader_llm, test_loader_llm, test_dataset_llm = None, None, None
     print('\nDataLoaders created successfully.')
 
     print('\n--- 3. Starting Hyperparameter Tuning for Human Model ---')
     study_human = optuna.create_study(direction='minimize')
-    study_human.optimize(lambda trial: objective(trial, train_loader_human, test_loader_human, test_dataset_human, X_human.shape[1]), n_trials=50)
+    study_human.optimize(lambda trial: objective(trial, X_human, y, X_human.shape[1]), n_trials=100)
     best_params_human = study_human.best_trial.params
     print("Best trial for Human Model:")
     print(f"  Value: {study_human.best_trial.value}")
@@ -223,7 +232,7 @@ def main():
 
     print('\n--- 4. Starting Hyperparameter Tuning for LLM Model ---')
     study_llm = optuna.create_study(direction='minimize')
-    study_llm.optimize(lambda trial: objective(trial, train_loader_llm, test_loader_llm, test_dataset_llm, X_llm.shape[1]), n_trials=50)
+    study_llm.optimize(lambda trial: objective(trial, X_llm, y, X_llm.shape[1]), n_trials=100)
     best_params_llm = study_llm.best_trial.params
     print("Best trial for LLM Model:")
     print(f"  Value: {study_llm.best_trial.value}")
@@ -233,9 +242,11 @@ def main():
 
     print('\n--- 5. Starting Final Control Group Experiment (Human Keywords) with Best Hyperparameters ---')
     num_features_human = X_human.shape[1]
+    train_loader_human, test_loader_human, test_dataset_human = create_dataloaders(X_human, y, batch_size=best_params_human['batch_size'])
     train_rmse_human, test_rmse_human, ci_95_human, ci_99_human = run_experiment(
         train_loader_human,         test_loader_human,         test_dataset_human,         num_features_human,         num_epochs=best_params_human['num_epochs'],
-        learning_rate=best_params_human['learning_rate'],         embedding_dim=best_params_human['embedding_dim'],        weight_decay=best_params_human['weight_decay']
+        learning_rate=best_params_human['learning_rate'],         embedding_dim=best_params_human['embedding_dim'],        weight_decay=best_params_human['weight_decay'],
+        optimizer_name=best_params_human['optimizer']
     )
     print(f"\nFinal Train RMSE for Control (Human) Model: {train_rmse_human:.4f}")
     print(f"Final Test RMSE for Control (Human) Model: {test_rmse_human:.4f}")
@@ -243,12 +254,12 @@ def main():
 
     print('\n--- 6. Starting Final Experimental Group Experiment (LLM Keywords) with Best Hyperparameters ---')
     num_features_llm = X_llm.shape[1]
+    train_loader_llm, test_loader_llm, test_dataset_llm = create_dataloaders(X_llm, y, batch_size=best_params_llm['batch_size'])
     train_rmse_llm, test_rmse_llm, ci_95_llm, ci_99_llm = run_experiment(
         train_loader_llm,         test_loader_llm,         test_dataset_llm,         num_features_llm,         num_epochs=best_params_llm['num_epochs'],
-        learning_rate=best_params_llm['learning_rate'],         embedding_dim=best_params_llm['embedding_dim'],        weight_decay=best_params_llm['weight_decay']
+        learning_rate=best_params_llm['learning_rate'],         embedding_dim=best_params_llm['embedding_dim'],        weight_decay=best_params_llm['weight_decay'],
+        optimizer_name=best_params_llm['optimizer']
     )
-    print(f"\nFinal Train RMSE for Experimental (LLM) Model: {train_rmse_llm:.4f}")
-    print(f"Final Test RMSE for Experimental (LLM) Model: {test_rmse_llm:.4f}")
 
     print('\n========== 7. EXPERIMENT RESULTS ==========')
     print(f"Train RMSE (Human Keywords): {train_rmse_human:.4f}")
