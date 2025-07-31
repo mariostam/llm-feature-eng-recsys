@@ -52,6 +52,7 @@ The project's methodology is structured into three interconnected modules, ensur
 *   `notebooks/`: Jupyter notebooks for data unification (`01-data-unification.ipynb`), merging processed batches (`02-merge-batches.ipynb`), and the main model training/evaluation workflow (`training_fm.ipynb`).
 *   `scripts/`: Python scripts, including `run_fm_model.py` for the core experiment.
 
+
 ## Conclusion & Future Work
 
 This project provides a robust framework for evaluating LLM-generated features in recommender systems. While the initial hypothesis was rejected, the findings offer valuable insights into the current state of LLM-powered feature engineering. Future work could explore more advanced prompt engineering, different LLM architectures, hybrid feature approaches, and deeper qualitative analysis of the generated keywords to understand the observed performance differences.
