@@ -159,7 +159,7 @@ def objective(trial, X, y, num_features):
 
 
 
-def create_dataloaders(X, y, test_size=0.2, batch_size, random_state=42):
+def create_dataloaders(X, y, batch_size, test_size=0.2, random_state=42):
     indices = np.arange(X.shape[0])
     train_indices, test_indices = train_test_split(indices, test_size=test_size, random_state=random_state)
     X_train, X_test = X.tocsr()[train_indices], X.tocsr()[test_indices]
