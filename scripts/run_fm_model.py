@@ -66,6 +66,7 @@ def train_model(model, train_loader, optimizer, criterion, device):
         predictions = model(features)
         loss = criterion(predictions, targets)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         total_loss += loss.item() * len(targets)
     return total_loss / len(train_loader.dataset)
