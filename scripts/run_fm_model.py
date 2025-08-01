@@ -144,7 +144,7 @@ def objective(trial, X, y, num_features):
     train_loader, test_loader, test_dataset = create_dataloaders(X, y, batch_size=batch_size)
 
     # Run the experiment with the suggested hyperparameters
-    _, test_rmse, _, _ = run_experiment(
+    _, test_rmse, _, _, _ = run_experiment(
         train_loader,
         test_loader,
         test_dataset,
