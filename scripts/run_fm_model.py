@@ -49,13 +49,20 @@ class FactorizationMachine(nn.Module):
         self.bias = nn.Parameter(torch.randn(1))
         self.weights = nn.Linear(num_features, 1, bias=False)
         self.embeddings = nn.Linear(num_features, embedding_dim, bias=False)
-    def forward(self, x):
+    def forward(self, x, return_components=False):
         linear_part = self.bias + self.weights(x)
         embedded_x = self.embeddings(x)
+        
+        # More numerically stable way to compute the interaction term
         sum_of_squares = embedded_x.pow(2).sum(1, keepdim=True)
-        square_of_sum = self.embeddings(x.pow(2)).sum(1, keepdim=True)
-        factorization_part = 0.5 * (sum_of_squares - square_of_sum)
-        return linear_part + factorization_part
+        square_of_sum = self.embeddings(x).sum(1, keepdim=True).pow(2)
+        
+        interaction_part = 0.5 * (square_of_sum - sum_of_squares)
+        
+        if return_components:
+            return linear_part, interaction_part
+
+        return linear_part + interaction_part
 
 def train_model(model, train_loader, optimizer, criterion, device):
     model.train()
@@ -220,6 +227,31 @@ def inspect_linear_weights(model, df, vectorizer, model_type):
 
     print("Note: This only considers the linear part of the FM. The factorization part (embeddings) also contributes significantly.")
 
+def analyze_prediction_contribution(model, test_loader, device):
+    model.eval()
+    total_linear_contribution = 0
+    total_interaction_contribution = 0
+    total_samples = 0
+
+    with torch.no_grad():
+        for features, _ in test_loader:
+            features = features.to(device)
+            linear_part, interaction_part = model(features, return_components=True)
+            
+            total_linear_contribution += torch.abs(linear_part).sum().item()
+            total_interaction_contribution += torch.abs(interaction_part).sum().item()
+            total_samples += len(features)
+
+    avg_linear_contribution = total_linear_contribution / total_samples
+    avg_interaction_contribution = total_interaction_contribution / total_samples
+    
+    total_contribution = avg_linear_contribution + avg_interaction_contribution
+    
+    percent_linear = (avg_linear_contribution / total_contribution) * 100
+    percent_interaction = (avg_interaction_contribution / total_contribution) * 100
+
+    return percent_linear, percent_interaction
+
 def main():
     set_seed(42)
     print('--- 1. Loading and Preprocessing Data ---')
@@ -301,11 +333,18 @@ def main():
     inspect_linear_weights(model_human, df, vectorizer_human, "Human")
     inspect_linear_weights(model_llm, df, vectorizer_llm, "LLM")
 
-    print('\n========== 8. EXPERIMENT RESULTS ==========')
+    print('\n--- 8. Analyzing Prediction Contributions ---')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    linear_human, interaction_human = analyze_prediction_contribution(model_human, test_loader_human, device)
+    linear_llm, interaction_llm = analyze_prediction_contribution(model_llm, test_loader_llm, device)
+
+    print('\n========== 9. EXPERIMENT RESULTS ==========')
     print(f"Train RMSE (Human Keywords): {train_rmse_human:.4f}")
     print(f"Test RMSE (Human Keywords): {test_rmse_human:.4f} (95% CI: {ci_95_human[0]:.4f}-{ci_95_human[1]:.4f}) (99% CI: {ci_99_human[0]:.4f}-{ci_99_human[1]:.4f})")
+    print(f"  Contribution -> Linear: {linear_human:.2f}%, Interaction: {interaction_human:.2f}%")
     print(f"Train RMSE (LLM Keywords):   {train_rmse_llm:.4f}")
     print(f"Test RMSE (LLM Keywords):   {test_rmse_llm:.4f} (95% CI: {ci_95_llm[0]:.4f}-{ci_95_llm[1]:.4f}) (99% CI: {ci_99_llm[0]:.4f}-{ci_99_llm[1]:.4f})")
+    print(f"  Contribution -> Linear: {linear_llm:.2f}%, Interaction: {interaction_llm:.2f}%")
     print('========================================')
 
     
