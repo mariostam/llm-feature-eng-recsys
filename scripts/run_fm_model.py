@@ -13,6 +13,8 @@ import warnings
 import random
 import os
 import optuna
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
 
 warnings.filterwarnings('ignore')
 
@@ -112,10 +114,16 @@ def run_experiment(train_loader, test_loader, test_dataset, num_features, num_ep
         optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     elif optimizer_name == 'SGD':
         optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    
+    train_rmse_history = []
+    test_rmse_history = []
+
     for epoch in tqdm(range(num_epochs), desc="Training Epochs"):
         train_model(model, train_loader, optimizer, criterion, device)
         train_rmse = evaluate_model(model, train_loader, criterion, device)
         test_rmse = evaluate_model(model, test_loader, criterion, device)
+        train_rmse_history.append(train_rmse)
+        test_rmse_history.append(test_rmse)
         print(f"Epoch {epoch+1}/{num_epochs} | Train RMSE: {train_rmse:.4f} | Test RMSE: {test_rmse:.4f}")
     
     ci_95 = (0, 0)
@@ -137,7 +145,7 @@ def run_experiment(train_loader, test_loader, test_dataset, num_features, num_ep
     final_train_rmse = evaluate_model(model, train_loader, criterion, device)
     final_test_rmse = evaluate_model(model, test_loader, criterion, device)
 
-    return final_train_rmse, final_test_rmse, ci_95, ci_99, model
+    return final_train_rmse, final_test_rmse, ci_95, ci_99, model, train_rmse_history, test_rmse_history
 
 def objective(trial, X, y, num_features):
     # Define hyperparameters to tune
@@ -151,7 +159,7 @@ def objective(trial, X, y, num_features):
     train_loader, test_loader, test_dataset = create_dataloaders(X, y, batch_size=batch_size)
 
     # Run the experiment with the suggested hyperparameters
-    _, test_rmse, _, _, _ = run_experiment(
+    _, test_rmse, _, _, _, _, _ = run_experiment(
         train_loader,
         test_loader,
         test_dataset,
@@ -227,6 +235,32 @@ def inspect_linear_weights(model, df, vectorizer, model_type):
 
     print("Note: This only considers the linear part of the FM. The factorization part (embeddings) also contributes significantly.")
 
+def visualize_keyword_embeddings(model, vectorizer, model_type, df):
+    print(f"\n--- Visualizing Keyword Embeddings for {model_type} Model ---")
+    num_users = df['user_id_cat'].nunique()
+    num_movies = df['movie_id_cat'].nunique()
+    
+    keyword_embeddings = model.embeddings.weight.detach().cpu().numpy()[num_users + num_movies:]
+    
+    tsne = TSNE(n_components=2, perplexity=5, random_state=42, n_iter=300)
+    keyword_tsne = tsne.fit_transform(keyword_embeddings)
+    
+    plt.figure(figsize=(12, 8))
+    plt.scatter(keyword_tsne[:, 0], keyword_tsne[:, 1], alpha=0.5)
+    plt.title(f't-SNE Visualization of {model_type} Keyword Embeddings')
+    plt.xlabel('t-SNE Dimension 1')
+    plt.ylabel('t-SNE Dimension 2')
+    
+    # Annotate some points
+    vocab = {v: k for k, v in vectorizer.vocabulary_.items()}
+    indices_to_annotate = np.random.choice(len(vocab), 15, replace=False)
+    for i in indices_to_annotate:
+        plt.annotate(vocab[i], (keyword_tsne[i, 0], keyword_tsne[i, 1]))
+        
+    filename = f'{model_type.lower()}_embeddings_tsne.png'
+    plt.savefig(filename)
+    print(f"Saved t-SNE plot to {filename}")
+
 def analyze_prediction_contribution(model, test_loader, device):
     model.eval()
     total_linear_contribution = 0
@@ -251,6 +285,60 @@ def analyze_prediction_contribution(model, test_loader, device):
     percent_interaction = (avg_interaction_contribution / total_contribution) * 100
 
     return percent_linear, percent_interaction
+
+def plot_learning_curves(human_history, llm_history):
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(human_history[0], label='Train RMSE')
+    plt.plot(human_history[1], label='Test RMSE')
+    plt.title('Human Model Learning Curves')
+    plt.xlabel('Epochs')
+    plt.ylabel('RMSE')
+    plt.legend()
+
+    plt.subplot(1, 2, 2)
+    plt.plot(llm_history[0], label='Train RMSE')
+    plt.plot(llm_history[1], label='Test RMSE')
+    plt.title('LLM Model Learning Curves')
+    plt.xlabel('Epochs')
+    plt.ylabel('RMSE')
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.savefig('learning_curves.png')
+    print("\nSaved learning curves plot to learning_curves.png")
+
+def plot_error_distribution(model_human, model_llm, test_loader_human, test_loader_llm, device):
+    model_human.eval()
+    model_llm.eval()
+    errors_human = []
+    errors_llm = []
+    with torch.no_grad():
+        for features, targets in test_loader_human:
+            features, targets = features.to(device), targets.to(device)
+            predictions = model_human(features)
+            errors_human.extend((predictions - targets).cpu().numpy())
+        for features, targets in test_loader_llm:
+            features, targets = features.to(device), targets.to(device)
+            predictions = model_llm(features)
+            errors_llm.extend((predictions - targets).cpu().numpy())
+
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.hist(errors_human, bins=50, alpha=0.7)
+    plt.title('Human Model Prediction Error Distribution')
+    plt.xlabel('Prediction Error')
+    plt.ylabel('Frequency')
+
+    plt.subplot(1, 2, 2)
+    plt.hist(errors_llm, bins=50, alpha=0.7)
+    plt.title('LLM Model Prediction Error Distribution')
+    plt.xlabel('Prediction Error')
+    plt.ylabel('Frequency')
+    
+    plt.tight_layout()
+    plt.savefig('error_distribution.png')
+    print("Saved error distribution plot to error_distribution.png")
 
 def main():
     set_seed(42)
@@ -312,7 +400,7 @@ def main():
     print('\n--- 5. Starting Final Control Group Experiment (Human Keywords) with Best Hyperparameters ---')
     num_features_human = X_human.shape[1]
     train_loader_human, test_loader_human, test_dataset_human = create_dataloaders(X_human, y, batch_size=best_params_human['batch_size'])
-    train_rmse_human, test_rmse_human, ci_95_human, ci_99_human, model_human = run_experiment(
+    train_rmse_human, test_rmse_human, ci_95_human, ci_99_human, model_human, train_rmse_history_human, test_rmse_history_human = run_experiment(
         train_loader_human,         test_loader_human,         test_dataset_human,         num_features_human,         num_epochs=best_params_human['num_epochs'],
         learning_rate=best_params_human['learning_rate'],         embedding_dim=best_params_human['embedding_dim'],        weight_decay=best_params_human['weight_decay'],
         optimizer_name=best_params_human['optimizer']
@@ -323,7 +411,7 @@ def main():
     print('\n--- 6. Starting Final Experimental Group Experiment (LLM Keywords) with Best Hyperparameters ---')
     num_features_llm = X_llm.shape[1]
     train_loader_llm, test_loader_llm, test_dataset_llm = create_dataloaders(X_llm, y, batch_size=best_params_llm['batch_size'])
-    train_rmse_llm, test_rmse_llm, ci_95_llm, ci_99_llm, model_llm = run_experiment(
+    train_rmse_llm, test_rmse_llm, ci_95_llm, ci_99_llm, model_llm, train_rmse_history_llm, test_rmse_history_llm = run_experiment(
         train_loader_llm,         test_loader_llm,         test_dataset_llm,         num_features_llm,         num_epochs=best_params_llm['num_epochs'],
         learning_rate=best_params_llm['learning_rate'],         embedding_dim=best_params_llm['embedding_dim'],        weight_decay=best_params_llm['weight_decay'],
         optimizer_name=best_params_llm['optimizer']
@@ -338,7 +426,15 @@ def main():
     linear_human, interaction_human = analyze_prediction_contribution(model_human, test_loader_human, device)
     linear_llm, interaction_llm = analyze_prediction_contribution(model_llm, test_loader_llm, device)
 
-    print('\n========== 9. EXPERIMENT RESULTS ==========')
+    print('\n--- 9. Visualizing Keyword Embeddings ---')
+    visualize_keyword_embeddings(model_human, vectorizer_human, "Human", df)
+    visualize_keyword_embeddings(model_llm, vectorizer_llm, "LLM", df)
+
+    print('\n--- 10. Generating Additional Visualizations ---')
+    plot_learning_curves((train_rmse_history_human, test_rmse_history_human), (train_rmse_history_llm, test_rmse_history_llm))
+    plot_error_distribution(model_human, model_llm, test_loader_human, test_loader_llm, device)
+
+    print('\n========== 11. EXPERIMENT RESULTS ==========')
     print(f"Train RMSE (Human Keywords): {train_rmse_human:.4f}")
     print(f"Test RMSE (Human Keywords): {test_rmse_human:.4f} (95% CI: {ci_95_human[0]:.4f}-{ci_95_human[1]:.4f}) (99% CI: {ci_99_human[0]:.4f}-{ci_99_human[1]:.4f})")
     print(f"  Contribution -> Linear: {linear_human:.2f}%, Interaction: {interaction_human:.2f}%")
