@@ -241,8 +241,20 @@ def visualize_keyword_embeddings(model, vectorizer, model_type, df):
     num_movies = df['movie_id_cat'].nunique()
     
     keyword_embeddings = model.embeddings.weight.detach().cpu().numpy()[num_users + num_movies:]
-    
-    tsne = TSNE(n_components=2, perplexity=5, random_state=42, n_iter=300)
+    n_samples = keyword_embeddings.shape[0]
+
+    # Add a guard clause to prevent crashing if the vocabulary is too small
+    if n_samples <= 1:
+        print(f"Skipping t-SNE visualization for {model_type} model: not enough keywords ({n_samples}) to visualize.")
+        return
+
+    # Dynamically set perplexity to be less than n_samples
+    perplexity_value = min(30, n_samples - 1)
+    if perplexity_value <= 0:
+        print(f"Skipping t-SNE visualization for {model_type} model: perplexity must be positive.")
+        return
+
+    tsne = TSNE(n_components=2, perplexity=perplexity_value, random_state=42, n_iter=300)
     keyword_tsne = tsne.fit_transform(keyword_embeddings)
     
     plt.figure(figsize=(12, 8))
@@ -253,13 +265,16 @@ def visualize_keyword_embeddings(model, vectorizer, model_type, df):
     
     # Annotate some points
     vocab = {v: k for k, v in vectorizer.vocabulary_.items()}
-    indices_to_annotate = np.random.choice(len(vocab), 15, replace=False)
+    # Ensure we don't try to annotate more points than exist
+    num_to_annotate = min(15, n_samples)
+    indices_to_annotate = np.random.choice(len(vocab), num_to_annotate, replace=False)
     for i in indices_to_annotate:
         plt.annotate(vocab[i], (keyword_tsne[i, 0], keyword_tsne[i, 1]))
         
     filename = f'{model_type.lower()}_embeddings_tsne.png'
     plt.savefig(filename)
     print(f"Saved t-SNE plot to {filename}")
+
 
 def analyze_prediction_contribution(model, test_loader, device):
     model.eval()
