@@ -53,16 +53,16 @@ def create_feature_matrix(df, keyword_column):
     user_features = pd.get_dummies(df['user_id_cat'], prefix='user')
     movie_features = pd.get_dummies(df['movie_id_cat'], prefix='movie')
 
-    # Ensure the keyword column is of string type, filling NaNs with empty strings
-    df[keyword_column] = df[keyword_column].astype(str).fillna('')
+    # --- Robust Keyword Processing ---
+    # Ensure the entire column is treated as a string, filling NaNs with empty strings
+    keywords_series = df[keyword_column].astype(str).fillna('')
 
-    # Use a different tokenizer based on the column being processed
     if keyword_column == 'human_keywords':
-        # Apply the JSON parser to the human_keywords column first
-        processed_keywords = df[keyword_column].apply(parse_human_keywords)
+        # Apply the JSON parser to the human_keywords column
+        processed_keywords = keywords_series.apply(parse_human_keywords)
     else:
-        # The llm_keywords are assumed to be comma-separated strings
-        processed_keywords = df[keyword_column]
+        # The llm_keywords are plain strings, so no special parsing is needed
+        processed_keywords = keywords_series
 
     vectorizer = CountVectorizer(tokenizer=lambda x: x.split(', '))
     keyword_features = vectorizer.fit_transform(processed_keywords)
