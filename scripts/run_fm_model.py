@@ -15,6 +15,7 @@ import os
 import optuna
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
+import json
 
 warnings.filterwarnings('ignore')
 
@@ -32,14 +33,39 @@ def set_seed(seed: int = 42):
 
     print('\nDataLoaders created successfully.')
 
+import json
+
+def parse_human_keywords(keywords_json):
+    """Parse the JSON string from the human_keywords column into a comma-separated string."""
+    try:
+        # The data is a string representation of a JSON list
+        keyword_list = json.loads(keywords_json)
+        # Extract the 'name' from each dictionary in the list
+        names = [d['name'] for d in keyword_list]
+        # Join the names into a single string
+        return ', '.join(names)
+    except (json.JSONDecodeError, TypeError):
+        # Return an empty string if parsing fails or if data is not a string
+        return ""
+
 def create_feature_matrix(df, keyword_column):
     # Convert user_id and movie_id to one-hot encoded features
     user_features = pd.get_dummies(df['user_id_cat'], prefix='user')
     movie_features = pd.get_dummies(df['movie_id_cat'], prefix='movie')
 
-    # Use CountVectorizer for keywords
+    # Ensure the keyword column is of string type, filling NaNs with empty strings
+    df[keyword_column] = df[keyword_column].astype(str).fillna('')
+
+    # Use a different tokenizer based on the column being processed
+    if keyword_column == 'human_keywords':
+        # Apply the JSON parser to the human_keywords column first
+        processed_keywords = df[keyword_column].apply(parse_human_keywords)
+    else:
+        # The llm_keywords are assumed to be comma-separated strings
+        processed_keywords = df[keyword_column]
+
     vectorizer = CountVectorizer(tokenizer=lambda x: x.split(', '))
-    keyword_features = vectorizer.fit_transform(df[keyword_column])
+    keyword_features = vectorizer.fit_transform(processed_keywords)
 
     # Combine all features
     X = hstack([user_features, movie_features, keyword_features])
