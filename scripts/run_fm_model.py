@@ -15,8 +15,6 @@ import os
 import optuna
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
-import json
-import ast
 
 warnings.filterwarnings('ignore')
 
@@ -34,44 +32,14 @@ def set_seed(seed: int = 42):
 
     print('\nDataLoaders created successfully.')
 
-import json
-import ast
-
-def parse_human_keywords(keywords_str):
-    """Safely parse the string representation of a list of dictionaries."""
-    if not isinstance(keywords_str, str) or not keywords_str.startswith('['):
-        return ""
-    try:
-        # Use ast.literal_eval for safely evaluating a string containing a Python literal
-        keyword_list = ast.literal_eval(keywords_str)
-        if not isinstance(keyword_list, list):
-            return ""
-        # Extract the 'name' from each dictionary in the list
-        names = [d.get('name', '') for d in keyword_list if isinstance(d, dict)]
-        # Join the names into a single string
-        return ', '.join(filter(None, names))
-    except (ValueError, SyntaxError, MemoryError, TypeError):
-        # Return an empty string if any parsing error occurs
-        return ""
-
 def create_feature_matrix(df, keyword_column):
     # Convert user_id and movie_id to one-hot encoded features
     user_features = pd.get_dummies(df['user_id_cat'], prefix='user')
     movie_features = pd.get_dummies(df['movie_id_cat'], prefix='movie')
 
-    # --- Robust Keyword Processing ---
-    # Ensure the entire column is treated as a string, filling NaNs with empty strings
-    keywords_series = df[keyword_column].astype(str).fillna('')
-
-    if keyword_column == 'human_keywords':
-        # Apply the JSON parser to the human_keywords column
-        processed_keywords = keywords_series.apply(parse_human_keywords)
-    else:
-        # The llm_keywords are plain strings, so no special parsing is needed
-        processed_keywords = keywords_series
-
+    # Use CountVectorizer for keywords
     vectorizer = CountVectorizer(tokenizer=lambda x: x.split(', '))
-    keyword_features = vectorizer.fit_transform(processed_keywords)
+    keyword_features = vectorizer.fit_transform(df[keyword_column])
 
     # Combine all features
     X = hstack([user_features, movie_features, keyword_features])
@@ -389,7 +357,7 @@ def plot_error_distribution(model_human, model_llm, test_loader_human, test_load
 
 def main():
     set_seed(42)
-    print('Loading and Preprocessing Data...')
+    print('--- 1. Loading and Preprocessing Data ---')
     # For reproducibility by other users, load the dataset directly from GitHub.
     # This avoids the need for Google Cloud Storage setup.
     DATA_PATH = 'https://github.com/mariostam/llm-feature-eng-recsys/raw/main/data/final_llm_features_dataset.parquet'
@@ -408,7 +376,7 @@ def main():
             'llm_keywords': ['fast-paced, explosive', 'lighthearted, love', 'fast-paced, explosive', 'space, future', 'lighthearted, love', 'emotional, serious', 'space, future', 'emotional, serious', 'suspenseful, investigation', 'magical, mythical', 'suspenseful, investigation', 'magical, mythical', 'gritty, investigation', 'period piece, factual', 'gritty, investigation', 'period piece, factual']
         })
 
-    print('\nPerforming Feature Engineering...')
+    print('\n--- 2. Performing Feature Engineering ---')
     df['user_id_cat'] = df['user_id'].astype('category').cat.codes
     df['movie_id_cat'] = df['movie_id'].astype('category').cat.codes
 
@@ -424,7 +392,7 @@ def main():
     train_loader_llm, test_loader_llm, test_dataset_llm = None, None, None
     print('\nDataLoaders created successfully.')
 
-    print('\nStarting Hyperparameter Tuning for Human Model...')
+    print('\n--- 3. Starting Hyperparameter Tuning for Human Model ---')
     study_human = optuna.create_study(direction='minimize')
     study_human.optimize(lambda trial: objective(trial, X_human, y, X_human.shape[1]), n_trials=120)
     best_params_human = study_human.best_trial.params
@@ -434,7 +402,7 @@ def main():
     for key, value in best_params_human.items():
         print(f"    {key}: {value}")
 
-    print('\nStarting Hyperparameter Tuning for LLM Model...')
+    print('\n--- 4. Starting Hyperparameter Tuning for LLM Model ---')
     study_llm = optuna.create_study(direction='minimize')
     study_llm.optimize(lambda trial: objective(trial, X_llm, y, X_llm.shape[1]), n_trials=120)
     best_params_llm = study_llm.best_trial.params
@@ -444,7 +412,7 @@ def main():
     for key, value in best_params_llm.items():
         print(f"    {key}: {value}")
 
-    print('\nStarting Final Control Group Experiment (Human Keywords) with Best Hyperparameters...')
+    print('\n--- 5. Starting Final Control Group Experiment (Human Keywords) with Best Hyperparameters ---')
     num_features_human = X_human.shape[1]
     train_loader_human, test_loader_human, test_dataset_human = create_dataloaders(X_human, y, batch_size=best_params_human['batch_size'])
     train_rmse_human, test_rmse_human, ci_95_human, ci_99_human, model_human, train_rmse_history_human, test_rmse_history_human = run_experiment(
@@ -455,7 +423,7 @@ def main():
     print(f"\nFinal Train RMSE for Control (Human) Model: {train_rmse_human:.4f}")
     print(f"Final Test RMSE for Control (Human) Model: {test_rmse_human:.4f}")
 
-    print('\nStarting Final Experimental Group Experiment (LLM Keywords) with Best Hyperparameters...')
+    print('\n--- 6. Starting Final Experimental Group Experiment (LLM Keywords) with Best Hyperparameters ---')
     num_features_llm = X_llm.shape[1]
     train_loader_llm, test_loader_llm, test_dataset_llm = create_dataloaders(X_llm, y, batch_size=best_params_llm['batch_size'])
     train_rmse_llm, test_rmse_llm, ci_95_llm, ci_99_llm, model_llm, train_rmse_history_llm, test_rmse_history_llm = run_experiment(
@@ -464,30 +432,31 @@ def main():
         optimizer_name=best_params_llm['optimizer']
     )
 
-    print('\nInspecting Linear Weights...')
+    print('\n--- 7. Inspecting Linear Weights ---')
     inspect_linear_weights(model_human, df, vectorizer_human, "Human")
     inspect_linear_weights(model_llm, df, vectorizer_llm, "LLM")
 
-    print('\nAnalyzing Prediction Contributions...')
+    print('\n--- 8. Analyzing Prediction Contributions ---')
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     linear_human, interaction_human = analyze_prediction_contribution(model_human, test_loader_human, device)
     linear_llm, interaction_llm = analyze_prediction_contribution(model_llm, test_loader_llm, device)
 
-    print('\nVisualizing Keyword Embeddings...')
+    print('\n--- 9. Visualizing Keyword Embeddings ---')
     visualize_keyword_embeddings(model_human, vectorizer_human, "Human", df)
     visualize_keyword_embeddings(model_llm, vectorizer_llm, "LLM", df)
 
-    print('\nGenerating Additional Visualizations...')
+    print('\n--- 10. Generating Additional Visualizations ---')
     plot_learning_curves((train_rmse_history_human, test_rmse_history_human), (train_rmse_history_llm, test_rmse_history_llm))
     plot_error_distribution(model_human, model_llm, test_loader_human, test_loader_llm, device)
 
-    print('\nEXPERIMENT RESULTS')
+    print('\n========== 11. EXPERIMENT RESULTS ==========')
     print(f"Train RMSE (Human Keywords): {train_rmse_human:.4f}")
     print(f"Test RMSE (Human Keywords): {test_rmse_human:.4f} (95% CI: {ci_95_human[0]:.4f}-{ci_95_human[1]:.4f}) (99% CI: {ci_99_human[0]:.4f}-{ci_99_human[1]:.4f})")
     print(f"  Contribution -> Linear: {linear_human:.2f}%, Interaction: {interaction_human:.2f}%")
     print(f"Train RMSE (LLM Keywords):   {train_rmse_llm:.4f}")
     print(f"Test RMSE (LLM Keywords):   {test_rmse_llm:.4f} (95% CI: {ci_95_llm[0]:.4f}-{ci_95_llm[1]:.4f}) (99% CI: {ci_99_llm[0]:.4f}-{ci_99_llm[1]:.4f})")
     print(f"  Contribution -> Linear: {linear_llm:.2f}%, Interaction: {interaction_llm:.2f}%")
+    print('========================================')
 
     
     if ci_95_llm[1] < ci_95_human[0]:
