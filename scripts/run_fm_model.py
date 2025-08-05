@@ -16,6 +16,7 @@ import optuna
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 import json
+import ast
 
 warnings.filterwarnings('ignore')
 
@@ -34,18 +35,23 @@ def set_seed(seed: int = 42):
     print('\nDataLoaders created successfully.')
 
 import json
+import ast
 
-def parse_human_keywords(keywords_json):
-    """Parse the JSON string from the human_keywords column into a comma-separated string."""
+def parse_human_keywords(keywords_str):
+    """Safely parse the string representation of a list of dictionaries."""
+    if not isinstance(keywords_str, str) or not keywords_str.startswith('['):
+        return ""
     try:
-        # The data is a string representation of a JSON list
-        keyword_list = json.loads(keywords_json)
+        # Use ast.literal_eval for safely evaluating a string containing a Python literal
+        keyword_list = ast.literal_eval(keywords_str)
+        if not isinstance(keyword_list, list):
+            return ""
         # Extract the 'name' from each dictionary in the list
-        names = [d['name'] for d in keyword_list]
+        names = [d.get('name', '') for d in keyword_list if isinstance(d, dict)]
         # Join the names into a single string
-        return ', '.join(names)
-    except (json.JSONDecodeError, TypeError):
-        # Return an empty string if parsing fails or if data is not a string
+        return ', '.join(filter(None, names))
+    except (ValueError, SyntaxError, MemoryError, TypeError):
+        # Return an empty string if any parsing error occurs
         return ""
 
 def create_feature_matrix(df, keyword_column):
