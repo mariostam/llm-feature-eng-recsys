@@ -13,8 +13,6 @@ import warnings
 import random
 import os
 import optuna
-from sklearn.manifold import TSNE
-import matplotlib.pyplot as plt
 
 warnings.filterwarnings('ignore')
 
@@ -30,7 +28,7 @@ def set_seed(seed: int = 42):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-    print('\nDataLoaders created successfully.')
+    print('DataLoaders created successfully.')
 
 def create_feature_matrix(df, keyword_column):
     # Convert user_id and movie_id to one-hot encoded features
@@ -202,7 +200,7 @@ def seed_worker(worker_id):
     random.seed(worker_seed)
 
 def inspect_linear_weights(model, df, vectorizer, model_type):
-    print(f"\n--- Linear Weights Inspection for {model_type} Model ---")
+    print(f"Linear Weights Inspection for {model_type} Model")
     weights = model.weights.weight.detach().cpu().numpy().flatten()
 
     num_users = df['user_id_cat'].nunique()
@@ -235,47 +233,6 @@ def inspect_linear_weights(model, df, vectorizer, model_type):
 
     print("Note: This only considers the linear part of the FM. The factorization part (embeddings) also contributes significantly.")
 
-def visualize_keyword_embeddings(model, vectorizer, model_type, df):
-    print(f"\n--- Visualizing Keyword Embeddings for {model_type} Model ---")
-    num_users = df['user_id_cat'].nunique()
-    num_movies = df['movie_id_cat'].nunique()
-    
-    keyword_embeddings = model.embeddings.weight.detach().cpu().numpy()[num_users + num_movies:]
-    n_samples = keyword_embeddings.shape[0]
-
-    # Add a guard clause to prevent crashing if the vocabulary is too small
-    if n_samples <= 1:
-        print(f"Skipping t-SNE visualization for {model_type} model: not enough keywords ({n_samples}) to visualize.")
-        return
-
-    # Dynamically set perplexity to be less than n_samples
-    perplexity_value = min(30, n_samples - 1)
-    if perplexity_value <= 0:
-        print(f"Skipping t-SNE visualization for {model_type} model: perplexity must be positive.")
-        return
-
-    tsne = TSNE(n_components=2, perplexity=perplexity_value, random_state=42, n_iter=300)
-    keyword_tsne = tsne.fit_transform(keyword_embeddings)
-    
-    plt.figure(figsize=(12, 8))
-    plt.scatter(keyword_tsne[:, 0], keyword_tsne[:, 1], alpha=0.5)
-    plt.title(f't-SNE Visualization of {model_type} Keyword Embeddings')
-    plt.xlabel('t-SNE Dimension 1')
-    plt.ylabel('t-SNE Dimension 2')
-    
-    # Annotate some points
-    vocab = {v: k for k, v in vectorizer.vocabulary_.items()}
-    # Ensure we don't try to annotate more points than exist
-    num_to_annotate = min(15, n_samples)
-    indices_to_annotate = np.random.choice(len(vocab), num_to_annotate, replace=False)
-    for i in indices_to_annotate:
-        plt.annotate(vocab[i], (keyword_tsne[i, 0], keyword_tsne[i, 1]))
-        
-    filename = f'{model_type.lower()}_embeddings_tsne.png'
-    plt.savefig(filename)
-    print(f"Saved t-SNE plot to {filename}")
-
-
 def analyze_prediction_contribution(model, test_loader, device):
     model.eval()
     total_linear_contribution = 0
@@ -301,63 +258,9 @@ def analyze_prediction_contribution(model, test_loader, device):
 
     return percent_linear, percent_interaction
 
-def plot_learning_curves(human_history, llm_history):
-    plt.figure(figsize=(12, 5))
-    plt.subplot(1, 2, 1)
-    plt.plot(human_history[0], label='Train RMSE')
-    plt.plot(human_history[1], label='Test RMSE')
-    plt.title('Human Model Learning Curves')
-    plt.xlabel('Epochs')
-    plt.ylabel('RMSE')
-    plt.legend()
-
-    plt.subplot(1, 2, 2)
-    plt.plot(llm_history[0], label='Train RMSE')
-    plt.plot(llm_history[1], label='Test RMSE')
-    plt.title('LLM Model Learning Curves')
-    plt.xlabel('Epochs')
-    plt.ylabel('RMSE')
-    plt.legend()
-    
-    plt.tight_layout()
-    plt.savefig('learning_curves.png')
-    print("\nSaved learning curves plot to learning_curves.png")
-
-def plot_error_distribution(model_human, model_llm, test_loader_human, test_loader_llm, device):
-    model_human.eval()
-    model_llm.eval()
-    errors_human = []
-    errors_llm = []
-    with torch.no_grad():
-        for features, targets in test_loader_human:
-            features, targets = features.to(device), targets.to(device)
-            predictions = model_human(features)
-            errors_human.extend((predictions - targets).cpu().numpy())
-        for features, targets in test_loader_llm:
-            features, targets = features.to(device), targets.to(device)
-            predictions = model_llm(features)
-            errors_llm.extend((predictions - targets).cpu().numpy())
-
-    plt.figure(figsize=(12, 5))
-    plt.subplot(1, 2, 1)
-    plt.hist(errors_human, bins=50, alpha=0.7)
-    plt.title('Human Model Prediction Error Distribution')
-    plt.xlabel('Prediction Error')
-    plt.ylabel('Frequency')
-
-    plt.subplot(1, 2, 2)
-    plt.hist(errors_llm, bins=50, alpha=0.7)
-    plt.title('LLM Model Prediction Error Distribution')
-    plt.xlabel('Prediction Error')
-    plt.ylabel('Frequency')
-    
-    plt.tight_layout()
-    plt.savefig('error_distribution.png')
-    print("Saved error distribution plot to error_distribution.png")
-
 def main():
     set_seed(42)
-    print('--- 1. Loading and Preprocessing Data ---')
+    print('Loading and Preprocessing Data')
     # For reproducibility by other users, load the dataset directly from GitHub.
     # This avoids the need for Google Cloud Storage setup.
     DATA_PATH = 'https://github.com/mariostam/llm-feature-eng-recsys/raw/main/data/final_llm_features_dataset.parquet'
@@ -376,7 +279,7 @@ def main():
             'llm_keywords': ['fast-paced, explosive', 'lighthearted, love', 'fast-paced, explosive', 'space, future', 'lighthearted, love', 'emotional, serious', 'space, future', 'emotional, serious', 'suspenseful, investigation', 'magical, mythical', 'suspenseful, investigation', 'magical, mythical', 'gritty, investigation', 'period piece, factual', 'gritty, investigation', 'period piece, factual']
         })
 
-    print('\n--- 2. Performing Feature Engineering ---')
+    print('Performing Feature Engineering')
     df['user_id_cat'] = df['user_id'].astype('category').cat.codes
     df['movie_id_cat'] = df['movie_id'].astype('category').cat.codes
 
@@ -390,9 +293,9 @@ def main():
     # These will be created inside the objective function with the suggested batch size
     train_loader_human, test_loader_human, test_dataset_human = None, None, None
     train_loader_llm, test_loader_llm, test_dataset_llm = None, None, None
-    print('\nDataLoaders created successfully.')
+    print('DataLoaders created successfully.')
 
-    print('\n--- 3. Starting Hyperparameter Tuning for Human Model ---')
+    print('Starting Hyperparameter Tuning for Human Model')
     study_human = optuna.create_study(direction='minimize')
     study_human.optimize(lambda trial: objective(trial, X_human, y, X_human.shape[1]), n_trials=120)
     best_params_human = study_human.best_trial.params
@@ -402,7 +305,7 @@ def main():
     for key, value in best_params_human.items():
         print(f"    {key}: {value}")
 
-    print('\n--- 4. Starting Hyperparameter Tuning for LLM Model ---')
+    print('Starting Hyperparameter Tuning for LLM Model')
     study_llm = optuna.create_study(direction='minimize')
     study_llm.optimize(lambda trial: objective(trial, X_llm, y, X_llm.shape[1]), n_trials=120)
     best_params_llm = study_llm.best_trial.params
@@ -412,7 +315,7 @@ def main():
     for key, value in best_params_llm.items():
         print(f"    {key}: {value}")
 
-    print('\n--- 5. Starting Final Control Group Experiment (Human Keywords) with Best Hyperparameters ---')
+    print('Starting Final Control Group Experiment (Human Keywords) with Best Hyperparameters')
     num_features_human = X_human.shape[1]
     train_loader_human, test_loader_human, test_dataset_human = create_dataloaders(X_human, y, batch_size=best_params_human['batch_size'])
     train_rmse_human, test_rmse_human, ci_95_human, ci_99_human, model_human, train_rmse_history_human, test_rmse_history_human = run_experiment(
@@ -420,10 +323,10 @@ def main():
         learning_rate=best_params_human['learning_rate'],         embedding_dim=best_params_human['embedding_dim'],        weight_decay=best_params_human['weight_decay'],
         optimizer_name=best_params_human['optimizer']
     )
-    print(f"\nFinal Train RMSE for Control (Human) Model: {train_rmse_human:.4f}")
+    print(f"Final Train RMSE for Control (Human) Model: {train_rmse_human:.4f}")
     print(f"Final Test RMSE for Control (Human) Model: {test_rmse_human:.4f}")
 
-    print('\n--- 6. Starting Final Experimental Group Experiment (LLM Keywords) with Best Hyperparameters ---')
+    print('Starting Final Experimental Group Experiment (LLM Keywords) with Best Hyperparameters')
     num_features_llm = X_llm.shape[1]
     train_loader_llm, test_loader_llm, test_dataset_llm = create_dataloaders(X_llm, y, batch_size=best_params_llm['batch_size'])
     train_rmse_llm, test_rmse_llm, ci_95_llm, ci_99_llm, model_llm, train_rmse_history_llm, test_rmse_history_llm = run_experiment(
@@ -432,46 +335,37 @@ def main():
         optimizer_name=best_params_llm['optimizer']
     )
 
-    print('\n--- 7. Inspecting Linear Weights ---')
+    print('Inspecting Linear Weights')
     inspect_linear_weights(model_human, df, vectorizer_human, "Human")
     inspect_linear_weights(model_llm, df, vectorizer_llm, "LLM")
 
-    print('\n--- 8. Analyzing Prediction Contributions ---')
+    print('Analyzing Prediction Contributions')
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     linear_human, interaction_human = analyze_prediction_contribution(model_human, test_loader_human, device)
     linear_llm, interaction_llm = analyze_prediction_contribution(model_llm, test_loader_llm, device)
 
-    print('\n--- 9. Visualizing Keyword Embeddings ---')
-    visualize_keyword_embeddings(model_human, vectorizer_human, "Human", df)
-    visualize_keyword_embeddings(model_llm, vectorizer_llm, "LLM", df)
-
-    print('\n--- 10. Generating Additional Visualizations ---')
-    plot_learning_curves((train_rmse_history_human, test_rmse_history_human), (train_rmse_history_llm, test_rmse_history_llm))
-    plot_error_distribution(model_human, model_llm, test_loader_human, test_loader_llm, device)
-
-    print('\n========== 11. EXPERIMENT RESULTS ==========')
+    
+    print('EXPERIMENT RESULTS')
     print(f"Train RMSE (Human Keywords): {train_rmse_human:.4f}")
     print(f"Test RMSE (Human Keywords): {test_rmse_human:.4f} (95% CI: {ci_95_human[0]:.4f}-{ci_95_human[1]:.4f}) (99% CI: {ci_99_human[0]:.4f}-{ci_99_human[1]:.4f})")
     print(f"  Contribution -> Linear: {linear_human:.2f}%, Interaction: {interaction_human:.2f}%")
     print(f"Train RMSE (LLM Keywords):   {train_rmse_llm:.4f}")
     print(f"Test RMSE (LLM Keywords):   {test_rmse_llm:.4f} (95% CI: {ci_95_llm[0]:.4f}-{ci_95_llm[1]:.4f}) (99% CI: {ci_99_llm[0]:.4f}-{ci_99_llm[1]:.4f})")
     print(f"  Contribution -> Linear: {linear_llm:.2f}%, Interaction: {interaction_llm:.2f}%")
-    print('========================================')
-
     
     if ci_95_llm[1] < ci_95_human[0]:
-        print(f"\nHypothesis Confirmed (at 95% confidence): LLM-based model performed statistically significantly better (95% CI: {ci_95_llm[0]:.4f}-{ci_95_llm[1]:.4f} vs {ci_95_human[0]:.4f}-{ci_95_human[1]:.4f}).")
+        print(f"Hypothesis Confirmed (at 95% confidence): LLM-based model performed statistically significantly better (95% CI: {ci_95_llm[0]:.4f}-{ci_95_llm[1]:.4f} vs {ci_95_human[0]:.4f}-{ci_95_human[1]:.4f}).")
     elif ci_95_human[1] < ci_95_llm[0]:
-        print(f"\nHypothesis Rejected (at 95% confidence): Human-based model performed statistically significantly better (95% CI: {ci_95_human[0]:.4f}-{ci_95_human[1]:.4f} vs {ci_95_llm[0]:.4f}-{ci_95_llm[1]:.4f}).")
+        print(f"Hypothesis Rejected (at 95% confidence): Human-based model performed statistically significantly better (95% CI: {ci_95_human[0]:.4f}-{ci_95_human[1]:.4f} vs {ci_95_llm[0]:.4f}-{ci_95_llm[1]:.4f}).")
     else:
-        print('\nResult: No statistically significant difference in model performance (95% CIs overlap).')
+        print('Result: No statistically significant difference in model performance (95% CIs overlap).')
 
     if ci_99_llm[1] < ci_99_human[0]:
-        print(f"\nHypothesis Confirmed (at 99% confidence): LLM-based model performed statistically significantly better (99% CI: {ci_99_llm[0]:.4f}-{ci_99_llm[1]:.4f} vs {ci_99_human[0]:.4f}-{ci_99_human[1]:.4f}).")
+        print(f"Hypothesis Confirmed (at 99% confidence): LLM-based model performed statistically significantly better (99% CI: {ci_99_llm[0]:.4f}-{ci_99_llm[1]:.4f} vs {ci_99_human[0]:.4f}-{ci_99_human[1]:.4f}).")
     elif ci_99_human[1] < ci_99_llm[0]:
-        print(f"\nHypothesis Rejected (at 99% confidence): Human-based model performed statistically significantly better (99% CI: {ci_99_human[0]:.4f}-{ci_99_human[1]:.4f} vs {ci_99_llm[0]:.4f}-{ci_99_llm[1]:.4f}).")
+        print(f"Hypothesis Rejected (at 99% confidence): Human-based model performed statistically significantly better (99% CI: {ci_99_human[0]:.4f}-{ci_99_human[1]:.4f} vs {ci_99_llm[0]:.4f}-{ci_99_llm[1]:.4f}).")
     else:
-        print('\nResult: No statistically significant difference in model performance (99% CIs overlap).')
+        print('Result: No statistically significant difference in model performance (99% CIs overlap).')
 
 
 if __name__ == '__main__':
