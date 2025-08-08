@@ -92,7 +92,7 @@ def evaluate_model(model, test_loader, criterion, device):
     mse = total_loss / len(test_loader.dataset)
     return np.sqrt(mse)
 
-def bootstrap_rmse(model, test_dataset, criterion, device, n_bootstraps=100):
+def bootstrap_rmse(model, test_dataset, criterion, device, n_bootstraps=10000):
     bootstrapped_rmses = []
     dataset_size = len(test_dataset)
     for _ in tqdm(range(n_bootstraps), desc="Bootstrapping RMSE"):
@@ -373,23 +373,13 @@ def main():
 
     print('Starting Hyperparameter Tuning for Human Model')
     study_human = optuna.create_study(direction='minimize')
-    study_human.optimize(lambda trial: objective(trial, X_human, y, X_human.shape[1]), n_trials=5)
+    study_human.optimize(lambda trial: objective(trial, X_human, y, X_human.shape[1]), n_trials=150)
     best_params_human = study_human.best_trial.params
-    print("Best trial for Human Model:")
-    print(f"  Value: {study_human.best_trial.value}")
-    print("  Params: ")
-    for key, value in best_params_human.items():
-        print(f"    {key}: {value}")
 
     print('Starting Hyperparameter Tuning for LLM Model')
     study_llm = optuna.create_study(direction='minimize')
-    study_llm.optimize(lambda trial: objective(trial, X_llm, y, X_llm.shape[1]), n_trials=5)
+    study_llm.optimize(lambda trial: objective(trial, X_llm, y, X_llm.shape[1]), n_trials=150)
     best_params_llm = study_llm.best_trial.params
-    print("Best trial for LLM Model:")
-    print(f"  Value: {study_llm.best_trial.value}")
-    print("  Params: ")
-    for key, value in best_params_llm.items():
-        print(f"    {key}: {value}")
 
     print('Starting Final Control Group Experiment (Human Keywords) with Best Hyperparameters')
     num_features_human = X_human.shape[1]
@@ -428,6 +418,14 @@ def main():
     print(f"Train RMSE (LLM Keywords):   {train_rmse_llm:.4f}")
     print(f"Test RMSE (LLM Keywords):   {test_rmse_llm:.4f} (95% CI: {ci_95_llm[0]:.4f}-{ci_95_llm[1]:.4f}) (99% CI: {ci_99_llm[0]:.4f}-{ci_99_llm[1]:.4f})")
     print(f"  Contribution -> Linear: {linear_llm:.2f}%, Interaction: {interaction_llm:.2f}%")
+
+    print('\nBest Hyperparameters Found:')
+    print("Human Model:")
+    for key, value in best_params_human.items():
+        print(f"    {key}: {value}")
+    print("LLM Model:")
+    for key, value in best_params_llm.items():
+        print(f"    {key}: {value}")
     
     if ci_95_llm[1] < ci_95_human[0]:
         print(f"Hypothesis Confirmed (at 95% confidence): LLM-based model performed statistically significantly better (95% CI: {ci_95_llm[0]:.4f}-{ci_95_llm[1]:.4f} vs {ci_95_human[0]:.4f}-{ci_95_human[1]:.4f}).")
