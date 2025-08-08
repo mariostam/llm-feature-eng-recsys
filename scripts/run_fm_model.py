@@ -13,6 +13,8 @@ import warnings
 import random
 import os
 import optuna
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
 
 warnings.filterwarnings('ignore')
 
@@ -90,7 +92,7 @@ def evaluate_model(model, test_loader, criterion, device):
     mse = total_loss / len(test_loader.dataset)
     return np.sqrt(mse)
 
-def bootstrap_rmse(model, test_dataset, criterion, device, n_bootstraps=10000):
+def bootstrap_rmse(model, test_dataset, criterion, device, n_bootstraps=100):
     bootstrapped_rmses = []
     dataset_size = len(test_dataset)
     for _ in tqdm(range(n_bootstraps), desc="Bootstrapping RMSE"):
@@ -170,7 +172,6 @@ def objective(trial, X, y, num_features):
         run_bootstrap=False # Disable bootstrapping during tuning for speed
     )
     return test_rmse
-
 
 
 def create_dataloaders(X, y, batch_size, test_size=0.2, random_state=42):
@@ -258,6 +259,81 @@ def analyze_prediction_contribution(model, test_loader, device):
 
     return percent_linear, percent_interaction
 
+def plot_rmse_comparison(human_rmse, llm_rmse, human_ci_95, llm_ci_95, human_ci_99, llm_ci_99):
+    """Generates and saves a bar chart comparing the RMSE of the two models with 95% and 99% CIs."""
+    labels = ['Human Keywords', 'LLM Keywords']
+    x_pos = np.arange(len(labels))
+    rmses = [human_rmse, llm_rmse]
+    
+    # CIs need to be transformed into a format suitable for errorbar plotting (distance from the mean)
+    ci_95 = np.array([
+        [human_rmse - human_ci_95[0], llm_rmse - llm_ci_95[0]],
+        [human_ci_95[1] - human_rmse, llm_ci_95[1] - llm_rmse]
+    ])
+    ci_99 = np.array([
+        [human_rmse - human_ci_99[0], llm_rmse - llm_ci_99[0]],
+        [human_ci_99[1] - human_rmse, llm_ci_99[1] - llm_rmse]
+    ])
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    bars = ax.bar(x_pos, rmses, yerr=ci_95, align='center', alpha=0.7, ecolor='black', capsize=10, color=['skyblue', 'lightgreen'], label='95% CI')
+    # Plot 99% CI with a different style
+    ax.errorbar(x_pos, rmses, yerr=ci_99, fmt='none', ecolor='red', capsize=5, label='99% CI')
+
+    ax.set_ylabel('Root Mean Squared Error (RMSE)')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(labels)
+    ax.set_title('Model Performance Comparison: Human vs. LLM Keywords')
+    ax.yaxis.grid(True)
+    ax.legend()
+
+    # Add RMSE values on top of the bars
+    for bar in bars:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.4f}', va='bottom', ha='center') 
+
+    plt.tight_layout()
+    plt.savefig('rmse_comparison.png')
+    print("RMSE comparison plot saved to rmse_comparison.png")
+
+def visualize_embeddings_pca(model, df, vectorizer, model_type, num_movies_to_plot=500):
+    """Generates and saves a PCA plot of the movie embeddings."""
+    print(f"Generating PCA plot for {model_type} model...")
+    
+    # Extract movie embeddings
+    num_users = df['user_id_cat'].nunique()
+    num_movies = df['movie_id_cat'].nunique()
+    movie_embeddings = model.embeddings.weight.T.detach().cpu().numpy()[num_users:num_users + num_movies]
+
+    # Ensure we don't plot more movies than we have
+    if num_movies < num_movies_to_plot:
+        num_movies_to_plot = num_movies
+
+    # Get a random sample of movies to plot for clarity
+    movie_indices = np.random.choice(num_movies, num_movies_to_plot, replace=False)
+    sampled_embeddings = movie_embeddings[movie_indices]
+    
+    # Get movie titles for labels
+    # Create a mapping from movie_id_cat to title
+    movie_id_map = df[['movie_id_cat', 'title']].drop_duplicates().set_index('movie_id_cat')
+    sampled_titles = movie_id_map.loc[movie_indices]['title'].values
+
+    pca = PCA(n_components=2, random_state=42)
+    pca_results = pca.fit_transform(sampled_embeddings)
+    
+    plt.figure(figsize=(16, 10))
+    plt.scatter(pca_results[:, 0], pca_results[:, 1])
+    
+    # Add labels to a subset of points to avoid clutter
+    for i in range(0, len(sampled_titles), 20): # Label every 20th point
+        plt.text(pca_results[i, 0], pca_results[i, 1], sampled_titles[i], fontsize=9)
+
+    plt.title(f'PCA Visualization of Movie Embeddings ({model_type} Model)')
+    plt.xlabel('PCA Dimension 1')
+    plt.ylabel('PCA Dimension 2')
+    plt.savefig(f'{model_type.lower()}_embeddings_pca.png')
+    print(f"PCA plot for {model_type} model saved to {model_type.lower()}_embeddings_pca.png")
+
 def main():
     set_seed(42)
     print('Loading and Preprocessing Data')
@@ -297,7 +373,7 @@ def main():
 
     print('Starting Hyperparameter Tuning for Human Model')
     study_human = optuna.create_study(direction='minimize')
-    study_human.optimize(lambda trial: objective(trial, X_human, y, X_human.shape[1]), n_trials=120)
+    study_human.optimize(lambda trial: objective(trial, X_human, y, X_human.shape[1]), n_trials=5)
     best_params_human = study_human.best_trial.params
     print("Best trial for Human Model:")
     print(f"  Value: {study_human.best_trial.value}")
@@ -307,7 +383,7 @@ def main():
 
     print('Starting Hyperparameter Tuning for LLM Model')
     study_llm = optuna.create_study(direction='minimize')
-    study_llm.optimize(lambda trial: objective(trial, X_llm, y, X_llm.shape[1]), n_trials=120)
+    study_llm.optimize(lambda trial: objective(trial, X_llm, y, X_llm.shape[1]), n_trials=5)
     best_params_llm = study_llm.best_trial.params
     print("Best trial for LLM Model:")
     print(f"  Value: {study_llm.best_trial.value}")
@@ -366,6 +442,18 @@ def main():
         print(f"Hypothesis Rejected (at 99% confidence): Human-based model performed statistically significantly better (99% CI: {ci_99_human[0]:.4f}-{ci_99_human[1]:.4f} vs {ci_99_llm[0]:.4f}-{ci_99_llm[1]:.4f}).")
     else:
         print('Result: No statistically significant difference in model performance (99% CIs overlap).')
+
+    print('\nGenerating Visualizations...')
+    # RMSE Comparison Plot
+    plot_rmse_comparison(
+        test_rmse_human, test_rmse_llm,
+        ci_95_human, ci_95_llm,
+        ci_99_human, ci_99_llm
+    )
+
+    # PCA Embedding Visualizations
+    visualize_embeddings_pca(model_human, df, vectorizer_human, "Human")
+    visualize_embeddings_pca(model_llm, df, vectorizer_llm, "LLM")
 
 
 if __name__ == '__main__':
