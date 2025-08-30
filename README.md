@@ -10,7 +10,7 @@ The primary hypothesis for this research was a null hypothesis: that there would
 
 ## Key Findings
 
-Contrary to the initial hypothesis, the experimental results demonstrated that the Factorization Machine model trained with **human-curated keywords performed statistically significantly better** (achieving a lower RMSE) than the model trained with LLM-generated keywords. This finding highlights the nuanced challenges and current limitations of directly replacing high-quality, human-curated features with LLM-generated ones in this specific recommender system context.
+The experimental results showed **no statistically significant difference** in predictive accuracy (RMSE) between the model trained with human-curated keywords and the model trained with LLM-generated keywords. As the confidence intervals for the two models' RMSE scores overlapped, the **null hypothesis could not be rejected**. This finding suggests that, in this specific context, LLM-generated features can perform on par with high-quality, human-curated features for a Factorization Machine model.
 
 ## Methodology Highlights
 
@@ -63,4 +63,4 @@ To easily reproduce the experiment and run the Factorization Machine model train
 
 ## Conclusion & Future Work
 
-This project provides a robust framework for evaluating LLM-generated features in recommender systems. While the initial hypothesis was rejected, the findings offer valuable insights into the current state of LLM-powered feature engineering. Future work could explore more advanced prompt engineering, different LLM architectures, hybrid feature approaches, and deeper qualitative analysis of the generated keywords to understand the observed performance differences.
+This project provides a robust framework for evaluating LLM-generated features in recommender systems. As the null hypothesis was not rejected, the findings demonstrate that LLM-generated features can be a viable alternative to human-curated ones without sacrificing predictive accuracy. Future work could explore more advanced prompt engineering, different LLM architectures, hybrid feature approaches, and deeper qualitative analysis of the generated keywords to understand their impact on model behavior beyond simple accuracy metrics.
