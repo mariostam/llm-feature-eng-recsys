@@ -259,6 +259,101 @@ def analyze_prediction_contribution(model, test_loader, device):
 
     return percent_linear, percent_interaction
 
+def plot_error_distribution(model_human, model_llm, loader_human, loader_llm, device):
+    """Generates and saves histograms of the prediction errors for both models."""
+    print("Generating error distribution plots...")
+    model_human.eval()
+    model_llm.eval()
+    
+    errors_human = []
+    with torch.no_grad():
+        for features, targets in loader_human:
+            features, targets = features.to(device), targets.to(device)
+            predictions = model_human(features)
+            errors_human.extend((predictions - targets).cpu().numpy().flatten())
+
+    errors_llm = []
+    with torch.no_grad():
+        for features, targets in loader_llm:
+            features, targets = features.to(device), targets.to(device)
+            predictions = model_llm(features)
+            errors_llm.extend((predictions - targets).cpu().numpy().flatten())
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
+    
+    ax1.hist(errors_human, bins=50, alpha=0.7, label='Errors')
+    ax1.axvline(x=0, color='r', linestyle='--')
+    ax1.set_title('Prediction Error Distribution (Human Model)')
+    ax1.set_xlabel('Prediction Error (Predicted - Actual)')
+    ax1.set_ylabel('Frequency')
+    ax1.legend()
+
+    ax2.hist(errors_llm, bins=50, alpha=0.7, label='Errors', color='lightgreen')
+    ax2.axvline(x=0, color='r', linestyle='--')
+    ax2.set_title('Prediction Error Distribution (LLM Model)')
+    ax2.set_xlabel('Prediction Error (Predicted - Actual)')
+    ax2.legend()
+
+    plt.tight_layout()
+    plt.savefig('error_distribution.png')
+    print("Error distribution plot saved to error_distribution.png")
+
+def plot_keyword_weights(model_human, model_llm, df, vectorizer_human, vectorizer_llm):
+    """Generates and saves histograms of the keyword linear weights for both models."""
+    print("Generating keyword weight distribution plots...")
+    
+    # Extract Human Keyword Weights
+    weights_human = model_human.weights.weight.detach().cpu().numpy().flatten()
+    num_users_human = df['user_id_cat'].nunique()
+    num_movies_human = df['movie_id_cat'].nunique()
+    keyword_weights_human = weights_human[num_users_human + num_movies_human:]
+
+    # Extract LLM Keyword Weights
+    weights_llm = model_llm.weights.weight.detach().cpu().numpy().flatten()
+    num_users_llm = df['user_id_cat'].nunique()
+    num_movies_llm = df['movie_id_cat'].nunique()
+    keyword_weights_llm = weights_llm[num_users_llm + num_movies_llm:]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
+    
+    ax1.hist(keyword_weights_human, bins=50, alpha=0.7)
+    ax1.set_title('Keyword Linear Weight Distribution (Human Model)')
+    ax1.set_xlabel('Weight Value')
+    ax1.set_ylabel('Frequency')
+
+    ax2.hist(keyword_weights_llm, bins=50, alpha=0.7, color='lightgreen')
+    ax2.set_title('Keyword Linear Weight Distribution (LLM Model)')
+    ax2.set_xlabel('Weight Value')
+
+    plt.tight_layout()
+    plt.savefig('keyword_weights.png')
+    print("Keyword weight distribution plot saved to keyword_weights.png")
+
+def plot_learning_curves(history_human, history_llm):
+    """Generates and saves learning curve plots for both models."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
+    
+    # Human Model Learning Curve
+    ax1.plot(history_human['train'], label='Train RMSE')
+    ax1.plot(history_human['test'], label='Test RMSE')
+    ax1.set_title('Learning Curve (Human Model)')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('RMSE')
+    ax1.legend()
+    ax1.grid(True)
+
+    # LLM Model Learning Curve
+    ax2.plot(history_llm['train'], label='Train RMSE')
+    ax2.plot(history_llm['test'], label='Test RMSE')
+    ax2.set_title('Learning Curve (LLM Model)')
+    ax2.set_xlabel('Epoch')
+    ax2.legend()
+    ax2.grid(True)
+
+    plt.tight_layout()
+    plt.savefig('learning_curves.png')
+    print("Learning curves plot saved to learning_curves.png")
+
 def plot_rmse_comparison(human_rmse, llm_rmse, human_ci_95, llm_ci_95, human_ci_99, llm_ci_99):
     """Generates and saves a bar chart comparing the RMSE of the two models with 95% and 99% CIs."""
     labels = ['Human Keywords', 'LLM Keywords']
@@ -296,10 +391,10 @@ def plot_rmse_comparison(human_rmse, llm_rmse, human_ci_95, llm_ci_95, human_ci_
     plt.savefig('rmse_comparison.png')
     print("RMSE comparison plot saved to rmse_comparison.png")
 
-def visualize_embeddings_pca(model, df, vectorizer, model_type, num_movies_to_plot=500):
-    """Generates and saves a PCA plot of the movie embeddings."""
+def visualize_embeddings_pca(model, df, vectorizer, model_type, num_movies_to_plot=200):
+    """Generates and saves a PCA plot of the movie embeddings, colored by genre."""
     print(f"Generating PCA plot for {model_type} model...")
-    
+
     # Extract movie embeddings
     num_users = df['user_id_cat'].nunique()
     num_movies = df['movie_id_cat'].nunique()
@@ -309,51 +404,82 @@ def visualize_embeddings_pca(model, df, vectorizer, model_type, num_movies_to_pl
     if num_movies < num_movies_to_plot:
         num_movies_to_plot = num_movies
 
-    # Get a random sample of movies to plot for clarity
+    # Get a random sample of movies to plot
     movie_indices = np.random.choice(num_movies, num_movies_to_plot, replace=False)
     sampled_embeddings = movie_embeddings[movie_indices]
-    
-    # Get movie titles for labels
-    # Create a mapping from movie_id_cat to title
-    movie_id_map = df[['movie_id_cat', 'title']].drop_duplicates().set_index('movie_id_cat')
-    sampled_titles = movie_id_map.loc[movie_indices]['title'].values
 
+    # Get movie titles and genres for the sampled movies
+    movie_id_map = df[['movie_id_cat', 'title', 'primary_genre']].drop_duplicates().set_index('movie_id_cat')
+    sampled_info = movie_id_map.loc[movie_indices]
+    sampled_titles = sampled_info['title'].values
+    sampled_genres = sampled_info['primary_genre'].values
+
+    # PCA transformation
     pca = PCA(n_components=2, random_state=42)
     pca_results = pca.fit_transform(sampled_embeddings)
+
+    # Create plot
+    plt.figure(figsize=(16, 12))
     
-    plt.figure(figsize=(16, 10))
-    plt.scatter(pca_results[:, 0], pca_results[:, 1])
-    
-    # Add labels to a subset of points to avoid clutter
-    for i in range(0, len(sampled_titles), 20): # Label every 20th point
+    # Define a color map for top genres
+    top_genres = df['primary_genre'].value_counts().nlargest(10).index
+    colors = plt.cm.get_cmap('tab10', len(top_genres))
+    genre_color_map = {genre: colors(i) for i, genre in enumerate(top_genres)}
+    default_color = 'lightgrey'
+
+    # Create scatter plot with colors
+    for i, genre in enumerate(sampled_genres):
+        color = genre_color_map.get(genre, default_color)
+        plt.scatter(pca_results[i, 0], pca_results[i, 1], color=color, label=genre if genre in genre_color_map and i == np.where(sampled_genres == genre)[0][0] else "")
+
+    # Add labels to a subset of points
+    for i in range(0, len(sampled_titles), 10): # Label every 10th point
         plt.text(pca_results[i, 0], pca_results[i, 1], sampled_titles[i], fontsize=9)
 
-    plt.title(f'PCA Visualization of Movie Embeddings ({model_type} Model)')
+    # Create legend
+    handles = [plt.Line2D([0], [0], marker='o', color='w', label=genre, markersize=10, markerfacecolor=color) for genre, color in genre_color_map.items()]
+    handles.append(plt.Line2D([0], [0], marker='o', color='w', label='Other', markersize=10, markerfacecolor=default_color))
+    plt.legend(title='Primary Genre', handles=handles)
+
+    plt.title(f'PCA Visualization of Movie Embeddings by Genre ({model_type} Model)')
     plt.xlabel('PCA Dimension 1')
     plt.ylabel('PCA Dimension 2')
-    plt.savefig(f'{model_type.lower()}_embeddings_pca.png')
-    print(f"PCA plot for {model_type} model saved to {model_type.lower()}_embeddings_pca.png")
+    plt.grid(True)
+    plt.savefig(f'{model_type.lower()}_embeddings_pca_colored.png')
+    print(f"PCA plot for {model_type} model saved to {model_type.lower()}_embeddings_pca_colored.png")
 
 def main():
     set_seed(42)
     print('Loading and Preprocessing Data')
-    # For reproducibility by other users, load the dataset directly from GitHub.
-    # This avoids the need for Google Cloud Storage setup.
     DATA_PATH = 'https://github.com/mariostam/llm-feature-eng-recsys/raw/main/data/final_llm_features_dataset.parquet'
+    MOVIES_PATH = 'https://github.com/mariostam/llm-feature-eng-recsys/raw/main/data/movies.csv'
 
     try:
         df = pd.read_parquet(DATA_PATH)
         print(f"Real dataset loaded successfully. Shape: {df.shape}")
+
+        # Load and merge genre data
+        movies_df = pd.read_csv(MOVIES_PATH)
+        df = pd.merge(df, movies_df[['movieId', 'title', 'genres']], left_on='movie_id', right_on='movieId', how='left')
+        df.rename(columns={'title_x': 'title'}, inplace=True)
+        df['primary_genre'] = df['genres'].apply(lambda x: x.split('|')[0] if isinstance(x, str) else 'Unknown')
+        df.drop(columns=['movieId', 'title_y', 'genres'], inplace=True, errors='ignore')
+        print("Genre data loaded and merged successfully.")
+
     except FileNotFoundError:
-        print(f"Warning: The data file was not found at {DATA_PATH}")
+        print(f"Warning: The data file was not found at {DATA_PATH} or {MOVIES_PATH}")
         print('Using a dummy dataframe for demonstration purposes.')
         df = pd.DataFrame({
             'user_id': [1, 1, 2, 2, 3, 3, 4, 4, 1, 2, 3, 4, 1, 2, 3, 4],
             'movie_id': [101, 102, 101, 103, 102, 104, 103, 104, 105, 106, 105, 106, 107, 108, 107, 108],
             'rating': [5, 3, 4, 2, 5, 4, 3, 5, 2, 4, 3, 5, 4, 3, 2, 5],
+            'title': ['Movie 101', 'Movie 102', 'Movie 101', 'Movie 103', 'Movie 102', 'Movie 104', 'Movie 103', 'Movie 104', 'Movie 105', 'Movie 106', 'Movie 105', 'Movie 106', 'Movie 107', 'Movie 108', 'Movie 107', 'Movie 108'],
             'human_keywords': ['action, thriller', 'comedy, romance', 'action, thriller', 'sci-fi, adventure', 'comedy, romance', 'drama', 'sci-fi, adventure', 'drama', 'mystery', 'fantasy', 'mystery', 'fantasy', 'crime', 'history', 'crime', 'history'],
-            'llm_keywords': ['fast-paced, explosive', 'lighthearted, love', 'fast-paced, explosive', 'space, future', 'lighthearted, love', 'emotional, serious', 'space, future', 'emotional, serious', 'suspenseful, investigation', 'magical, mythical', 'suspenseful, investigation', 'magical, mythical', 'gritty, investigation', 'period piece, factual', 'gritty, investigation', 'period piece, factual']
+            'llm_keywords': ['fast-paced, explosive', 'lighthearted, love', 'fast-paced, explosive', 'space, future', 'lighthearted, love', 'emotional, serious', 'space, future', 'emotional, serious', 'suspenseful, investigation', 'magical, mythical', 'suspenseful, investigation', 'magical, mythical', 'gritty, investigation', 'period piece, factual', 'gritty, investigation', 'period piece, factual'],
+            'genres': ['Action|Thriller', 'Comedy|Romance', 'Action|Thriller', 'Sci-Fi|Adventure', 'Comedy|Romance', 'Drama', 'Sci-Fi|Adventure', 'Drama', 'Mystery', 'Fantasy', 'Mystery', 'Fantasy', 'Crime', 'History', 'Crime', 'History']
         })
+        df['primary_genre'] = df['genres'].apply(lambda x: x.split('|')[0])
+
 
     print('Performing Feature Engineering')
     df['user_id_cat'] = df['user_id'].astype('category').cat.codes
@@ -373,12 +499,12 @@ def main():
 
     print('Starting Hyperparameter Tuning for Human Model')
     study_human = optuna.create_study(direction='minimize')
-    study_human.optimize(lambda trial: objective(trial, X_human, y, X_human.shape[1]), n_trials=150)
+    study_human.optimize(lambda trial: objective(trial, X_human, y, X_human.shape[1]), n_trials=120)
     best_params_human = study_human.best_trial.params
 
     print('Starting Hyperparameter Tuning for LLM Model')
     study_llm = optuna.create_study(direction='minimize')
-    study_llm.optimize(lambda trial: objective(trial, X_llm, y, X_llm.shape[1]), n_trials=150)
+        study_llm.optimize(lambda trial: objective(trial, X_llm, y, X_llm.shape[1]), n_trials=120)
     best_params_llm = study_llm.best_trial.params
 
     print('Starting Final Control Group Experiment (Human Keywords) with Best Hyperparameters')
@@ -442,6 +568,12 @@ def main():
         print('Result: No statistically significant difference in model performance (99% CIs overlap).')
 
     print('\nGenerating Visualizations...')
+    human_history = {'train': train_rmse_history_human, 'test': test_rmse_history_human}
+    llm_history = {'train': train_rmse_history_llm, 'test': test_rmse_history_llm}
+    plot_learning_curves(human_history, llm_history)
+    plot_error_distribution(model_human, model_llm, test_loader_human, test_loader_llm, device)
+    plot_keyword_weights(model_human, model_llm, df, vectorizer_human, vectorizer_llm)
+
     # RMSE Comparison Plot
     plot_rmse_comparison(
         test_rmse_human, test_rmse_llm,
