@@ -452,7 +452,7 @@ def main():
     set_seed(42)
     print('Loading and Preprocessing Data')
     DATA_PATH = 'https://github.com/mariostam/llm-feature-eng-recsys/raw/main/data/final_llm_features_dataset.parquet'
-    MOVIES_PATH = 'https://github.com/mariostam/llm-feature-eng-recsys/raw/main/data/movies.csv'
+    MOVIES_PATH = 'https://raw.githubusercontent.com/mariostam/llm-feature-eng-recsys/refs/heads/main/data/ml-25m/movies.csv'
 
     try:
         df = pd.read_parquet(DATA_PATH)
