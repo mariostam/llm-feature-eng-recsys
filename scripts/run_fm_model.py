@@ -504,7 +504,7 @@ def main():
 
     print('Starting Hyperparameter Tuning for LLM Model')
     study_llm = optuna.create_study(direction='minimize')
-        study_llm.optimize(lambda trial: objective(trial, X_llm, y, X_llm.shape[1]), n_trials=120)
+    study_llm.optimize(lambda trial: objective(trial, X_llm, y, X_llm.shape[1]), n_trials=120)
     best_params_llm = study_llm.best_trial.params
 
     print('Starting Final Control Group Experiment (Human Keywords) with Best Hyperparameters')
