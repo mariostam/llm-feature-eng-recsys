@@ -36,7 +36,7 @@ The project's methodology is structured into three interconnected modules, ensur
 
 ## Technology Stack
 
-*   **Programming Language:** Python 3.x
+*   **Programming Language:** Python 3
 *   **Data Manipulation:** pandas, NumPy, scikit-learn
 *   **Machine Learning:** PyTorch (for Factorization Machine implementation)
 *   **LLM Interaction:** Google Gemini (google-generativeai library)
@@ -63,4 +63,4 @@ To easily reproduce the experiment and run the Factorization Machine model train
 
 ## Conclusion & Future Work
 
-This project provides a robust framework for evaluating LLM-generated features in recommender systems. As the null hypothesis was not rejected, the findings demonstrate that LLM-generated features can be a viable alternative to human-curated ones without sacrificing predictive accuracy. Future work could explore more advanced prompt engineering, different LLM architectures, hybrid feature approaches, and deeper qualitative analysis of the generated keywords to understand their impact on model behavior beyond simple accuracy metrics.
+This project provides a robust framework for evaluating LLM-generated features in recommender systems. The findings demonstrate that LLM-generated features can be a viable alternative to human-curated ones without sacrificing predictive accuracy.
