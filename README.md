@@ -4,13 +4,10 @@
 
 This thesis project investigates the efficacy of Large Language Models (LLMs) in generating high-quality, thematic features for recommender systems. Specifically, it explores whether LLM-generated keywords can enhance the predictive accuracy of a Factorization Machine (FM) model compared to traditional human-curated keywords. The project involved building a robust, scalable, and automated cloud-based pipeline for data processing and LLM-powered feature generation, followed by rigorous model training and evaluation.
 
-## Core Hypothesis
-
-The primary hypothesis for this research was a null hypothesis: that there would be no statistically significant difference in predictive accuracy (Root Mean Squared Error - RMSE) between a Factorization Machine model trained with LLM-generated thematic keywords and an identical model trained with human-created keywords.
 
 ## Key Findings
 
-The experimental results showed **no statistically significant difference** in predictive accuracy (RMSE) between the model trained with human-curated keywords and the model trained with LLM-generated keywords. As the confidence intervals for the two models' RMSE scores overlapped, the **null hypothesis could not be rejected**. This finding suggests that, in this specific context, LLM-generated features can perform on par with high-quality, human-curated features for a Factorization Machine model.
+The experimental results showed **no statistically significant difference** in predictive accuracy (RMSE) between the model trained with human-curated keywords and the model trained with LLM-generated keywords, as the confidence intervals for the two models' RMSE scores overlapped. This finding suggests that, in this specific context, LLM-generated features can perform on par with high-quality, human-curated features for a Factorization Machine model.
 
 ## Methodology Highlights
 
