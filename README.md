@@ -57,7 +57,3 @@ To easily reproduce the experiment and run the Factorization Machine model train
 2.  **Select GPU Runtime:** In Colab, go to `Runtime > Change runtime type` and select `GPU` as the hardware accelerator. This will significantly speed up model training.
 3.  **Run All Cells:** Execute all cells in the notebook (`Runtime > Run all`). The notebook will automatically clone the repository, install dependencies, and run the full experiment, including hyperparameter tuning and statistical evaluation.
 
-
-## Conclusion & Future Work
-
-This project provides a robust framework for evaluating LLM-generated features in recommender systems. The findings demonstrate that LLM-generated features can be a viable alternative to human-curated ones without sacrificing predictive accuracy.
