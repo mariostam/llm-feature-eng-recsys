@@ -33,10 +33,10 @@ The project's methodology is structured into three interconnected modules, ensur
 
 ## Technology Stack
 
-*   **Programming Language:** Python 3
+*   **Programming Language:** Python 3.12
 *   **Data Manipulation:** pandas, NumPy, scikit-learn
 *   **Machine Learning:** PyTorch (for Factorization Machine implementation)
-*   **LLM Interaction:** Google Gemini (google-generativeai library)
+*   **LLM Interaction:** Google Gemini 2.5 Flash (google-generativeai library)
 *   **Cloud Platform:** Google Cloud Platform (Cloud Functions, Cloud Storage, Cloud Scheduler)
 *   **Development Environment:** Google Colaboratory (Colab), Google AI Studio
 *   **Hyperparameter Optimization:** Optuna
@@ -44,7 +44,7 @@ The project's methodology is structured into three interconnected modules, ensur
 
 ## Repository Structure
 
-*   `cloud_function/`: Contains the source code for the Google Cloud Functions (`main.py`, `requirements.txt`).
+*   `cloud_function/`: Contains the source code for the Google Cloud Functions (`movie_feature_generation.py`, `requirements.txt`).
 *   `data/`: Placeholder for raw and processed data files (e.g., `master_dataframe.parquet`, `final_llm_features_dataset.parquet`).
 *   `notebooks/`: Jupyter notebooks for data unification (`01-data-unification.ipynb`), merging processed batches (`02-merge-batches.ipynb`), and the main model training/evaluation workflow (`training_fm.ipynb`).
 *   `scripts/`: Python scripts, including `run_fm_model.py` for the core experiment.
