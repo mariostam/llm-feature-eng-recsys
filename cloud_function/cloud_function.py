@@ -1,1 +1,0 @@
-<content of cloud_function/main.py>
